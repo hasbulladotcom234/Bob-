@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .config import Config
+from .data import bars_per_year
 from .risk import RiskManager
 from .strategy import generate_signals
 
@@ -27,7 +28,7 @@ class BacktestResult:
 def run_backtest(df: pd.DataFrame, config: Config) -> BacktestResult:
     """df must have columns: timestamp, open, high, low, close, volume,
     sorted ascending by timestamp."""
-    data = generate_signals(df, config.strategy)
+    data = generate_signals(df, config.strategy, config.round_trip_cost())
     risk = RiskManager(params=config.risk)
 
     equity = config.starting_balance
@@ -43,19 +44,19 @@ def run_backtest(df: pd.DataFrame, config: Config) -> BacktestResult:
     fee = config.risk.taker_fee_pct
     slip = config.risk.slippage_pct
 
-    for _, row in data.iterrows():
-        price = row["close"]
-        day = pd.Timestamp(row["timestamp"]).date() if "timestamp" in row else None
+    days = pd.to_datetime(data["timestamp"]).dt.date if "timestamp" in data else [None] * len(data)
+    columns = zip(data["close"], data["high"], data["low"], data["long_entry"], data["long_exit"], days)
 
+    for price, high, low, long_entry, long_exit, day in columns:
         # mark-to-market equity
         equity = cash + position_qty * price
         halted = risk.check_daily_circuit_breaker(day, equity) if day else False
 
         # manage open position: stop-loss / take-profit / signal exit
         if position_qty > 0:
-            hit_stop = row["low"] <= stop_price
-            hit_take = row["high"] >= take_price
-            signal_exit = row["long_exit"]
+            hit_stop = low <= stop_price
+            hit_take = high >= take_price
+            signal_exit = long_exit
 
             if hit_stop or hit_take or signal_exit:
                 exit_price = stop_price if hit_stop else (take_price if hit_take else price)
@@ -74,7 +75,7 @@ def run_backtest(df: pd.DataFrame, config: Config) -> BacktestResult:
                 entry_price = stop_price = take_price = None
 
         # consider new entry
-        if position_qty == 0 and row["long_entry"] and not halted:
+        if position_qty == 0 and long_entry and not halted:
             candidate_entry = price * (1 + slip)
             candidate_stop = risk.stop_loss_price(candidate_entry, config.strategy.stop_loss_pct)
             qty = risk.position_size(equity, candidate_entry, candidate_stop)
@@ -104,7 +105,7 @@ def run_backtest(df: pd.DataFrame, config: Config) -> BacktestResult:
         win_rate_pct = 0.0
 
     returns = equity_series.pct_change().dropna()
-    sharpe = (returns.mean() / returns.std() * np.sqrt(365 * 24)) if returns.std() not in (0, None) and len(returns) > 1 else 0.0
+    sharpe = (returns.mean() / returns.std() * np.sqrt(bars_per_year(config.timeframe))) if returns.std() not in (0, None) and len(returns) > 1 else 0.0
     if pd.isna(sharpe):
         sharpe = 0.0
 

@@ -28,8 +28,8 @@ def run_forever(config: Config) -> None:
 
     while True:
         try:
-            df = fetch_ohlcv(config.exchange_id, config.symbol, config.timeframe, limit=200)
-            data = generate_signals(df, config.strategy)
+            df = fetch_ohlcv(config.exchange_id, config.symbol, config.timeframe, limit=300)
+            data = generate_signals(df, config.strategy, config.round_trip_cost())
             last = data.iloc[-1]
             price = last["close"]
             today = datetime.now(timezone.utc).date()
@@ -56,7 +56,8 @@ def run_forever(config: Config) -> None:
                               qty, price, stop_price, take_price)
                     broker.buy(qty, price, stop_price, take_price)
 
-            log.info("Equity: %.2f | Position qty: %.6f", equity, broker.get_position().qty)
+            log.info("Equity: %.2f | Position qty: %.6f | P(take-profit first): %.1f%% | edge: %.2f%%",
+                     equity, broker.get_position().qty, last["p_take"] * 100, last["edge"] * 100)
 
         except Exception:
             log.exception("Error in bot loop, will retry after poll interval")

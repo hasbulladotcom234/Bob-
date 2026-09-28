@@ -9,7 +9,7 @@ space being searched.
 """
 import copy
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
 import pandas as pd
@@ -57,7 +57,8 @@ def grid_search(
         if fast >= slow:
             continue
 
-        params = StrategyParams(
+        params = replace(
+            base_config.strategy,
             fast_ema=fast, slow_ema=slow, rsi_period=rsi_p,
             stop_loss_pct=sl, take_profit_pct=tp,
         )
