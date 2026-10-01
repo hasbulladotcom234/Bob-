@@ -1,20 +1,19 @@
-"""Broker implementations: a simulated paper broker and a ccxt-backed
-exchange broker (used for both exchange sandbox/paper accounts and live), behind a common interface so the bot loop doesn't care which
-one it's talking to.
+"""Brokers turn "buy this much" / "sell this much" into fills. The bot loop
+tracks the position itself (and saves it to disk), so a broker only needs to
+report what actually got filled.
+
+- PaperBroker: simulated fills in memory, no account needed.
+- ExchangeBroker: real orders via ccxt, either on the exchange's paper/testnet
+  account (MODE=sandbox) or with real money (MODE=live).
 """
+import logging
+import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 
 from .config import Config
 from .data import exchange_from_config
 
-
-@dataclass
-class Position:
-    qty: float = 0.0
-    entry_price: float = 0.0
-    stop_price: float = 0.0
-    take_price: float = 0.0
+log = logging.getLogger("tradingbot")
 
 
 class Broker(ABC):
@@ -23,54 +22,60 @@ class Broker(ABC):
         ...
 
     @abstractmethod
-    def get_position(self) -> Position:
-        ...
+    def buy(self, qty: float, price: float) -> tuple:
+        """Market buy. Returns (qty now held from this order, average fill price)."""
 
     @abstractmethod
-    def buy(self, qty: float, price: float, stop_price: float, take_price: float) -> None:
-        ...
+    def sell(self, qty: float, price: float) -> tuple:
+        """Market sell. Returns (qty sold, average fill price)."""
 
-    @abstractmethod
-    def sell_all(self, price: float) -> None:
-        ...
+    def save_state(self) -> dict:
+        return {}
+
+    def load_state(self, state: dict) -> None:
+        pass
 
 
 class PaperBroker(Broker):
-    """Simulates fills against the last traded price, applying fees and
-    slippage, with an in-memory cash balance. No real money moves."""
+    """Simulates fills at the given price plus slippage and fees."""
 
     def __init__(self, config: Config):
         self.config = config
         self.cash = config.starting_balance
-        self.position = Position()
+        self.coin = 0.0
 
     def get_equity(self, last_price: float) -> float:
-        return self.cash + self.position.qty * last_price
+        return self.cash + self.coin * last_price
 
-    def get_position(self) -> Position:
-        return self.position
+    def buy(self, qty, price):
+        r = self.config.risk
+        fill = price * (1 + r.slippage_pct)
+        qty = min(qty, self.cash / (fill * (1 + r.taker_fee_pct)))
+        if qty <= 0:
+            return 0.0, fill
+        self.cash -= qty * fill * (1 + r.taker_fee_pct)
+        self.coin += qty
+        return qty, fill
 
-    def buy(self, qty: float, price: float, stop_price: float, take_price: float) -> None:
-        fill_price = price * (1 + self.config.risk.slippage_pct)
-        cost = qty * fill_price * (1 + self.config.risk.taker_fee_pct)
-        if cost > self.cash or qty <= 0:
-            return
-        self.cash -= cost
-        self.position = Position(qty=qty, entry_price=fill_price, stop_price=stop_price, take_price=take_price)
+    def sell(self, qty, price):
+        r = self.config.risk
+        fill = price * (1 - r.slippage_pct)
+        qty = min(qty, self.coin)
+        self.cash += qty * fill * (1 - r.taker_fee_pct)
+        self.coin -= qty
+        return qty, fill
 
-    def sell_all(self, price: float) -> None:
-        if self.position.qty <= 0:
-            return
-        fill_price = price * (1 - self.config.risk.slippage_pct)
-        proceeds = self.position.qty * fill_price * (1 - self.config.risk.taker_fee_pct)
-        self.cash += proceeds
-        self.position = Position()
+    def save_state(self):
+        return {"paper_cash": self.cash, "paper_coin": self.coin}
+
+    def load_state(self, state):
+        self.cash = state.get("paper_cash", self.cash)
+        self.coin = state.get("paper_coin", self.coin)
 
 
 class ExchangeBroker(Broker):
-    """Places real orders on an exchange via ccxt. In sandbox mode they go to
-    the exchange's paper/testnet account (fake money); in live mode they use
-    real funds and require Config.validate_live_trading_allowed() to pass."""
+    """Real orders via ccxt. Sandbox mode trades the exchange's paper account
+    (fake money); live mode requires Config.validate_live_trading_allowed()."""
 
     def __init__(self, config: Config):
         self.config = config
@@ -79,31 +84,49 @@ class ExchangeBroker(Broker):
         else:
             config.validate_live_trading_allowed()
         self.exchange = exchange_from_config(config)
-        self.position = Position()
+        self.base, self.quote = config.symbol.split("/")
 
-    def get_equity(self, last_price: float) -> float:
-        balance = self.exchange.fetch_balance()
-        quote = self.config.symbol.split("/")[1]
-        base = self.config.symbol.split("/")[0]
-        cash = balance.get("free", {}).get(quote, 0.0) or 0.0
-        base_qty = balance.get("free", {}).get(base, 0.0) or 0.0
-        return cash + base_qty * last_price
+    def _free(self, asset: str) -> float:
+        return float(self.exchange.fetch_balance().get("free", {}).get(asset) or 0.0)
 
-    def get_position(self) -> Position:
-        return self.position
+    def get_equity(self, last_price):
+        free = self.exchange.fetch_balance().get("free", {})
+        return float(free.get(self.quote) or 0.0) + float(free.get(self.base) or 0.0) * last_price
 
-    def buy(self, qty: float, price: float, stop_price: float, take_price: float) -> None:
+    def coin_balance(self) -> float:
+        return self._free(self.base)
+
+    def _wait_for_fill(self, order: dict, timeout: float = 10.0) -> dict:
+        deadline = time.time() + timeout
+        while order.get("status") not in ("closed", "canceled", "rejected", "expired") and time.time() < deadline:
+            time.sleep(1)
+            order = self.exchange.fetch_order(order["id"], self.config.symbol)
+        return order
+
+    def buy(self, qty, price):
         if qty <= 0:
-            return
-        order = self.exchange.create_market_buy_order(self.config.symbol, qty)
-        fill_price = order.get("average") or order.get("price") or price
-        self.position = Position(qty=qty, entry_price=fill_price, stop_price=stop_price, take_price=take_price)
+            return 0.0, price
+        before = self.coin_balance()
+        order = self._wait_for_fill(self.exchange.create_market_buy_order(self.config.symbol, qty))
+        fill = order.get("average") or order.get("price") or price
+        # Some exchanges (Alpaca crypto) take the fee out of the coin you buy,
+        # so what you hold is less than what you ordered. Use the real balance.
+        held = self.coin_balance() - before
+        if held <= 0:
+            held = order.get("filled") or 0.0
+        log.info("Order %s: bought %.8f %s at %.2f (status %s)",
+                 order.get("id"), held, self.base, fill, order.get("status"))
+        return held, fill
 
-    def sell_all(self, price: float) -> None:
-        if self.position.qty <= 0:
-            return
-        self.exchange.create_market_sell_order(self.config.symbol, self.position.qty)
-        self.position = Position()
+    def sell(self, qty, price):
+        qty = min(qty, self.coin_balance())  # never try to sell more than we actually hold
+        if qty <= 0:
+            return 0.0, price
+        order = self._wait_for_fill(self.exchange.create_market_sell_order(self.config.symbol, qty))
+        fill = order.get("average") or order.get("price") or price
+        log.info("Order %s: sold %.8f %s at %.2f (status %s)",
+                 order.get("id"), qty, self.base, fill, order.get("status"))
+        return qty, fill
 
 
 def make_broker(config: Config) -> Broker:

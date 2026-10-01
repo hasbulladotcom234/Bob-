@@ -2,6 +2,9 @@
 
 Nothing here is a secret by default. API keys are only read from the
 environment and are never hardcoded or logged.
+
+Strategy settings (moving average lengths, stop-loss %, ...) live in
+my_strategy.py. This file holds the plumbing and account-level risk rules.
 """
 import os
 from dataclasses import dataclass, field
@@ -12,21 +15,11 @@ load_dotenv()
 
 
 @dataclass
-class StrategyParams:
-    fast_ema: int = 12
-    slow_ema: int = 26
-    rsi_period: int = 14
-    rsi_bull_threshold: float = 50.0
-    stop_loss_pct: float = 0.03      # exit if price falls 3% below entry
-    take_profit_pct: float = 0.06    # exit if price rises 6% above entry
-
-
-@dataclass
 class RiskParams:
-    risk_per_trade_pct: float = 0.01   # fraction of equity risked per trade
+    risk_per_trade_pct: float = 0.01   # fraction of equity lost if a trade hits its stop
     max_position_pct: float = 0.25     # never put more than this fraction of equity in one trade
-    max_daily_loss_pct: float = 0.05   # circuit breaker: halt trading for the day past this drawdown
-    taker_fee_pct: float = 0.001       # exchange taker fee, used in backtests/paper fills
+    max_daily_loss_pct: float = 0.05   # circuit breaker: no new trades for the day past this drawdown
+    taker_fee_pct: float = float(os.getenv("TAKER_FEE_PCT", "0.0025"))  # Alpaca crypto entry tier: 0.25%
     slippage_pct: float = 0.0005       # assumed slippage on market fills
 
 
@@ -41,6 +34,12 @@ class Config:
     mode: str = os.getenv("MODE", "paper")
     starting_balance: float = float(os.getenv("STARTING_BALANCE", "10000"))
     poll_interval_seconds: int = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
+    strategy_module: str = os.getenv("STRATEGY", "my_strategy")
+    history_bars: int = int(os.getenv("HISTORY_BARS", "5000"))  # bars used by backtest/optimize
+
+    # The bot remembers its position here across restarts, and logs every trade.
+    state_file: str = os.getenv("STATE_FILE", "state.json")
+    trade_log: str = os.getenv("TRADE_LOG", "trades.csv")
 
     api_key: str = os.getenv("EXCHANGE_API_KEY", "")
     api_secret: str = os.getenv("EXCHANGE_API_SECRET", "")
@@ -49,7 +48,6 @@ class Config:
     # in addition to mode=live and valid API keys being present.
     live_trading_confirmed: str = os.getenv("I_UNDERSTAND_LIVE_TRADING_RISK", "")
 
-    strategy: StrategyParams = field(default_factory=StrategyParams)
     risk: RiskParams = field(default_factory=RiskParams)
 
     def is_live(self) -> bool:

@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .env
 .pytest_cache/
+state.json
+state.json.tmp
+trades.csv
+backtest_trades.csv
+backtest_equity.csv

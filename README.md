@@ -22,52 +22,68 @@ pip install -r requirements.txt
 cp .env.example .env   # then edit as needed
 ```
 
+## How the project is split
+
+- **`my_strategy.py` is yours.** It holds the trading idea: which
+  indicators to compute (`indicators`), when to buy or sell (`decide`), the
+  numbers you might tune (`PARAMS`), and the values the optimizer should try
+  (`PARAM_GRID`). It's the only file you need to touch to try a new idea.
+- **`tradingbot/` is the plumbing.** It fetches data, backtests, optimizes,
+  sizes positions, places orders on Alpaca, remembers the position across
+  restarts, and keeps a trade journal. The same `decide()` runs in the
+  backtest and live, so they can't drift apart.
+
+Timing rules, identical in backtest and live: `decide()` only sees bars that
+have closed, orders fill at the next bar's open (in live, the current price
+right after the close), and stop-loss / take-profit are checked continuously.
+The backtest also warns you if an indicator uses future data.
+
 ## Configuration (`.env`)
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `EXCHANGE_ID` | `binance` | Any [ccxt](https://github.com/ccxt/ccxt) exchange id |
-| `SYMBOL` | `BTC/USDT` | Trading pair |
+| `EXCHANGE_ID` | `binance` | Any [ccxt](https://github.com/ccxt/ccxt) exchange id, e.g. `alpaca` |
+| `SYMBOL` | `BTC/USDT` | Trading pair (`BTC/USD` on Alpaca) |
 | `TIMEFRAME` | `1h` | Candle timeframe |
 | `MODE` | `paper` | `paper` (local simulation), `sandbox` (exchange paper account, e.g. Alpaca paper), or `live` |
-| `STARTING_BALANCE` | `10000` | Simulated starting cash (paper mode only) |
-| `POLL_INTERVAL_SECONDS` | `60` | How often the live loop checks for new signals |
-| `EXCHANGE_API_KEY` / `EXCHANGE_API_SECRET` | _(empty)_ | Needed for `sandbox` and `live` modes |
+| `STARTING_BALANCE` | `10000` | Simulated starting cash (backtests and `paper` mode) |
+| `POLL_INTERVAL_SECONDS` | `60` | How often the live loop checks prices |
+| `HISTORY_BARS` | `5000` | How many bars `backtest` / `optimize` download |
+| `TAKER_FEE_PCT` | `0.0025` | Fee per fill used in backtests/paper (Alpaca crypto: 0.25% at the lowest tier) |
+| `STRATEGY` | `my_strategy` | Strategy file to load (without `.py`), to keep several ideas side by side |
+| `STATE_FILE` / `TRADE_LOG` | `state.json` / `trades.csv` | Where the bot saves its position and logs every fill |
+| `EXCHANGE_API_KEY` / `EXCHANGE_API_SECRET` | _(empty)_ | Needed for `sandbox` and `live` (and for Alpaca data) |
 | `I_UNDERSTAND_LIVE_TRADING_RISK` | _(empty)_ | Must be set to `yes` to unlock live mode |
 
 ## Workflow
 
-1. **Backtest** the default strategy on recent history:
+1. **Edit `my_strategy.py`** with your idea.
+2. **Backtest** it:
    ```bash
    python main.py backtest
    ```
-2. **Optimize** ("train") parameters with a train/test split so results
-   aren't just curve-fit to one dataset:
+   Compare the strategy return against buy & hold. `backtest_trades.csv`
+   and `backtest_equity.csv` are saved so you can dig into individual trades.
+3. **Optimize** over `PARAM_GRID`:
    ```bash
    python main.py optimize
    ```
-   This grid-searches EMA/RSI/stop-loss/take-profit combinations, scores
-   them by risk-adjusted return on the training slice, and reports the
-   same score on an untouched test slice. If the test score is much worse
-   than train, the parameters are overfit — don't trust them.
-3. Take the best params from step 2 and set them in `tradingbot/config.py`
-   (`StrategyParams` defaults), or wire them into `.env` if you prefer.
-4. **Paper trade** to see it run against live market data with fake money:
-   ```bash
-   MODE=paper python main.py run
-   ```
-5. Optionally, **paper trade on a real exchange paper account** (see
-   [Alpaca paper trading](#alpaca-paper-trading) below):
+   Every combination is scored on the first 70% of the data; only the
+   winner is run on the last 30%. If the test score is much worse than
+   train, the parameters are overfit, so don't trust them. Copy parameters
+   you do trust into `PARAMS`.
+4. **Paper trade** on Alpaca's paper account (see below):
    ```bash
    MODE=sandbox python main.py run
    ```
-6. Only after you're satisfied with paper results, **go live**:
+   Every fill goes to `trades.csv`. Compare it with what the backtest
+   predicted for the same period.
+5. Only after you're satisfied with paper results, **go live**:
    ```bash
-   EXCHANGE_API_KEY=... EXCHANGE_API_SECRET=... \
    I_UNDERSTAND_LIVE_TRADING_RISK=yes MODE=live python main.py run
    ```
-   The bot refuses to place real orders unless both the confirmation
-   variable and valid API keys are present.
+   with live (not paper) API keys. The bot refuses to place real orders
+   unless both the confirmation variable and keys are present.
 
 ## Alpaca paper trading
 
@@ -94,13 +110,20 @@ Sandbox mode always routes to the exchange's paper endpoints
 exchange has none, so it can't accidentally hit a real-money API. The bot
 trades crypto only (Alpaca supports pairs like `BTC/USD`, `ETH/USD`).
 
+The bot assumes it's the only thing trading that coin on the account. On
+startup it checks its saved position against the real balance. If you sell
+manually in the app, it notices and stops tracking that position. It leaves
+coins it didn't buy alone.
+
 ## Risk controls (always on, paper or live)
 
 - **Position sizing**: each trade risks at most `risk_per_trade_pct` of
   equity (default 1%), capped at `max_position_pct` of equity in any one
   trade (default 25%).
-- **Stop-loss / take-profit**: every position has both, checked every bar.
-- **Daily circuit breaker**: trading halts for the rest of the day if
+- **Stop-loss / take-profit**: every position has both, set in
+  `my_strategy.py` (`stop_loss_pct`, `take_profit_pct`), checked every
+  bar in backtests and every poll live.
+- **Daily circuit breaker**: no new trades for the rest of the day if
   losses exceed `max_daily_loss_pct` of the day's starting equity
   (default 5%).
 
@@ -109,17 +132,18 @@ Tune these in `tradingbot/config.py` (`RiskParams`).
 ## Project layout
 
 ```
-tradingbot/
-  config.py      # settings, env vars, live-trading safety gate
-  indicators.py  # EMA, RSI
-  strategy.py    # signal generation
-  risk.py        # position sizing, stop/take levels, daily circuit breaker
-  backtester.py  # event-driven backtest over historical OHLCV
-  optimizer.py   # walk-forward grid search over strategy params
-  brokers.py     # PaperBroker (simulated) and ExchangeBroker (ccxt orders, sandbox or live)
-  data.py        # ccxt exchange setup and OHLCV fetching
-  bot.py         # main run loop
+my_strategy.py   # YOUR strategy: indicators, buy/sell rules, parameters
 main.py          # CLI: backtest / optimize / run
+tradingbot/
+  config.py      # settings, env vars, risk limits, live-trading safety gate
+  indicators.py  # EMA, RSI (add your own helpers here)
+  strategy.py    # loads my_strategy.py, lookahead check
+  risk.py        # position sizing, stop/take levels, daily circuit breaker
+  backtester.py  # bar-by-bar backtest with next-open fills
+  optimizer.py   # grid search over PARAM_GRID with a train/test split
+  brokers.py     # PaperBroker (simulated) and ExchangeBroker (ccxt orders, sandbox or live)
+  data.py        # ccxt exchange setup, history paging, closed-bar filtering
+  bot.py         # live loop, saved state, trade journal
 tests/           # pytest unit tests (synthetic data, no network calls)
 ```
 
