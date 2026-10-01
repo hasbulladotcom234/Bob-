@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from .brokers import make_broker
 from .config import Config
-from .data import fetch_ohlcv
+from .data import exchange_from_config, fetch_ohlcv
 from .risk import RiskManager
 from .strategy import generate_signals
 
@@ -20,15 +20,20 @@ def run_forever(config: Config) -> None:
         config.validate_live_trading_allowed()
         log.warning("LIVE TRADING ENABLED. Real funds are at risk on %s %s.",
                     config.exchange_id, config.symbol)
+    elif config.is_sandbox():
+        config.validate_sandbox_allowed()
+        log.info("Running in SANDBOX mode: orders go to the %s paper/testnet account (fake money).",
+                 config.exchange_id)
     else:
         log.info("Running in PAPER mode (simulated funds, no real orders).")
 
     broker = make_broker(config)
     risk = RiskManager(params=config.risk)
+    exchange = exchange_from_config(config)
 
     while True:
         try:
-            df = fetch_ohlcv(config.exchange_id, config.symbol, config.timeframe, limit=200)
+            df = fetch_ohlcv(exchange, config.symbol, config.timeframe, limit=200)
             data = generate_signals(df, config.strategy)
             last = data.iloc[-1]
             price = last["close"]

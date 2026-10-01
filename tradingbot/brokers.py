@@ -1,13 +1,12 @@
-"""Broker implementations: a simulated paper broker and a real ccxt-backed
-live broker, behind a common interface so the bot loop doesn't care which
+"""Broker implementations: a simulated paper broker and a ccxt-backed
+exchange broker (used for both exchange sandbox/paper accounts and live), behind a common interface so the bot loop doesn't care which
 one it's talking to.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-import ccxt
-
 from .config import Config
+from .data import exchange_from_config
 
 
 @dataclass
@@ -68,19 +67,18 @@ class PaperBroker(Broker):
         self.position = Position()
 
 
-class LiveBroker(Broker):
-    """Places real orders on a real exchange via ccxt. Only usable when
-    Config.validate_live_trading_allowed() has passed."""
+class ExchangeBroker(Broker):
+    """Places real orders on an exchange via ccxt. In sandbox mode they go to
+    the exchange's paper/testnet account (fake money); in live mode they use
+    real funds and require Config.validate_live_trading_allowed() to pass."""
 
     def __init__(self, config: Config):
         self.config = config
-        config.validate_live_trading_allowed()
-        exchange_class = getattr(ccxt, config.exchange_id)
-        self.exchange = exchange_class({
-            "apiKey": config.api_key,
-            "secret": config.api_secret,
-            "enableRateLimit": True,
-        })
+        if config.is_sandbox():
+            config.validate_sandbox_allowed()
+        else:
+            config.validate_live_trading_allowed()
+        self.exchange = exchange_from_config(config)
         self.position = Position()
 
     def get_equity(self, last_price: float) -> float:
@@ -109,6 +107,6 @@ class LiveBroker(Broker):
 
 
 def make_broker(config: Config) -> Broker:
-    if config.is_live():
-        return LiveBroker(config)
+    if config.is_live() or config.is_sandbox():
+        return ExchangeBroker(config)
     return PaperBroker(config)

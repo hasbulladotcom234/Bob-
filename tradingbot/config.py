@@ -35,7 +35,10 @@ class Config:
     exchange_id: str = os.getenv("EXCHANGE_ID", "binance")
     symbol: str = os.getenv("SYMBOL", "BTC/USDT")
     timeframe: str = os.getenv("TIMEFRAME", "1h")
-    mode: str = os.getenv("MODE", "paper")  # "paper" or "live"
+    # "paper"   = local simulation, no account needed
+    # "sandbox" = real orders on the exchange's paper/testnet account (e.g. Alpaca paper)
+    # "live"    = real orders with real money
+    mode: str = os.getenv("MODE", "paper")
     starting_balance: float = float(os.getenv("STARTING_BALANCE", "10000"))
     poll_interval_seconds: int = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
 
@@ -51,6 +54,16 @@ class Config:
 
     def is_live(self) -> bool:
         return self.mode.strip().lower() == "live"
+
+    def is_sandbox(self) -> bool:
+        return self.mode.strip().lower() == "sandbox"
+
+    def validate_sandbox_allowed(self) -> None:
+        if self.is_sandbox() and (not self.api_key or not self.api_secret):
+            raise RuntimeError(
+                "MODE=sandbox needs EXCHANGE_API_KEY / EXCHANGE_API_SECRET set to your "
+                "exchange's paper-account keys."
+            )
 
     def validate_live_trading_allowed(self) -> None:
         if not self.is_live():

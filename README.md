@@ -29,10 +29,10 @@ cp .env.example .env   # then edit as needed
 | `EXCHANGE_ID` | `binance` | Any [ccxt](https://github.com/ccxt/ccxt) exchange id |
 | `SYMBOL` | `BTC/USDT` | Trading pair |
 | `TIMEFRAME` | `1h` | Candle timeframe |
-| `MODE` | `paper` | `paper` or `live` |
+| `MODE` | `paper` | `paper` (local simulation), `sandbox` (exchange paper account, e.g. Alpaca paper), or `live` |
 | `STARTING_BALANCE` | `10000` | Simulated starting cash (paper mode only) |
 | `POLL_INTERVAL_SECONDS` | `60` | How often the live loop checks for new signals |
-| `EXCHANGE_API_KEY` / `EXCHANGE_API_SECRET` | _(empty)_ | Only needed for live mode |
+| `EXCHANGE_API_KEY` / `EXCHANGE_API_SECRET` | _(empty)_ | Needed for `sandbox` and `live` modes |
 | `I_UNDERSTAND_LIVE_TRADING_RISK` | _(empty)_ | Must be set to `yes` to unlock live mode |
 
 ## Workflow
@@ -56,13 +56,43 @@ cp .env.example .env   # then edit as needed
    ```bash
    MODE=paper python main.py run
    ```
-5. Only after you're satisfied with paper results, **go live**:
+5. Optionally, **paper trade on a real exchange paper account** (see
+   [Alpaca paper trading](#alpaca-paper-trading) below):
+   ```bash
+   MODE=sandbox python main.py run
+   ```
+6. Only after you're satisfied with paper results, **go live**:
    ```bash
    EXCHANGE_API_KEY=... EXCHANGE_API_SECRET=... \
    I_UNDERSTAND_LIVE_TRADING_RISK=yes MODE=live python main.py run
    ```
    The bot refuses to place real orders unless both the confirmation
    variable and valid API keys are present.
+
+## Alpaca paper trading
+
+`MODE=sandbox` sends real orders to an exchange's paper/testnet account, so
+you see real fills and your positions show up in the exchange's app, but no
+real money moves. For Alpaca:
+
+1. Log in at [alpaca.markets](https://alpaca.markets), switch to your
+   **Paper** account (top-left account switcher), and generate API keys on
+   the Home page. Paper keys are different from live keys.
+2. Put them in `.env`:
+   ```
+   EXCHANGE_ID=alpaca
+   SYMBOL=BTC/USD
+   MODE=sandbox
+   EXCHANGE_API_KEY=your-paper-key-id
+   EXCHANGE_API_SECRET=your-paper-secret
+   ```
+3. Run `python main.py run`. Trades appear in the Alpaca app under your
+   paper account.
+
+Sandbox mode always routes to the exchange's paper endpoints
+(`paper-api.alpaca.markets` for Alpaca) and refuses to start if the
+exchange has none, so it can't accidentally hit a real-money API. The bot
+trades crypto only (Alpaca supports pairs like `BTC/USD`, `ETH/USD`).
 
 ## Risk controls (always on, paper or live)
 
@@ -86,8 +116,8 @@ tradingbot/
   risk.py        # position sizing, stop/take levels, daily circuit breaker
   backtester.py  # event-driven backtest over historical OHLCV
   optimizer.py   # walk-forward grid search over strategy params
-  brokers.py     # PaperBroker (simulated) and LiveBroker (real ccxt orders)
-  data.py        # OHLCV fetching via ccxt
+  brokers.py     # PaperBroker (simulated) and ExchangeBroker (ccxt orders, sandbox or live)
+  data.py        # ccxt exchange setup and OHLCV fetching
   bot.py         # main run loop
 main.py          # CLI: backtest / optimize / run
 tests/           # pytest unit tests (synthetic data, no network calls)

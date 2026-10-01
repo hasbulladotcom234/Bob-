@@ -10,13 +10,13 @@ import sys
 from tradingbot.backtester import run_backtest
 from tradingbot.bot import run_forever
 from tradingbot.config import Config
-from tradingbot.data import fetch_ohlcv
+from tradingbot.data import exchange_from_config, fetch_ohlcv
 from tradingbot.optimizer import grid_search
 
 
 def cmd_backtest():
     config = Config()
-    df = fetch_ohlcv(config.exchange_id, config.symbol, config.timeframe, limit=1000)
+    df = fetch_ohlcv(exchange_from_config(config), config.symbol, config.timeframe, limit=1000)
     result = run_backtest(df, config)
     print(f"Total return:     {result.total_return_pct:.2f}%")
     print(f"Max drawdown:     {result.max_drawdown_pct:.2f}%")
@@ -27,7 +27,7 @@ def cmd_backtest():
 
 def cmd_optimize():
     config = Config()
-    df = fetch_ohlcv(config.exchange_id, config.symbol, config.timeframe, limit=1500)
+    df = fetch_ohlcv(exchange_from_config(config), config.symbol, config.timeframe, limit=1500)
     result = grid_search(df, config)
     print("Best params found on training data:")
     print(result.best_params)
