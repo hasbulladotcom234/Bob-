@@ -1,6 +1,7 @@
 """CLI entry point.
 
 Usage:
+    python main.py explore         # statistical facts about the market, to ground ideas in data
     python main.py backtest        # test my_strategy.py on historical data
     python main.py optimize        # search my_strategy.py's PARAM_GRID with a train/test split
     python main.py run             # run the bot (MODE=paper / sandbox / live, see .env / README)
@@ -11,6 +12,7 @@ from tradingbot.backtester import run_backtest
 from tradingbot.bot import run_forever
 from tradingbot.config import Config
 from tradingbot.data import exchange_from_config, fetch_history
+from tradingbot.explore import report
 from tradingbot.optimizer import grid_search
 
 
@@ -19,6 +21,10 @@ def load_history(config):
     print(f"{len(df)} {config.timeframe} bars of {config.symbol}: "
           f"{df['timestamp'].iloc[0]} -> {df['timestamp'].iloc[-1]}\n")
     return df
+
+
+def cmd_explore():
+    print(report(load_history(Config())))
 
 
 def cmd_backtest():
@@ -57,7 +63,7 @@ def cmd_run():
     run_forever(Config())
 
 
-COMMANDS = {"backtest": cmd_backtest, "optimize": cmd_optimize, "run": cmd_run}
+COMMANDS = {"explore": cmd_explore, "backtest": cmd_backtest, "optimize": cmd_optimize, "run": cmd_run}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:
