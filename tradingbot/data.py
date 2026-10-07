@@ -25,8 +25,8 @@ def make_exchange(exchange_id: str, api_key: str = "", api_secret: str = "",
 
 
 def exchange_from_config(config) -> ccxt.Exchange:
-    # Some exchanges (e.g. Alpaca) need keys even to load markets, so pass them
-    # along for data too. Sandbox keys only work against sandbox endpoints.
+    # Pass keys along when we have them (needed for trading, and by some
+    # exchanges for data). Sandbox keys only work against sandbox endpoints.
     return make_exchange(config.exchange_id, config.api_key, config.api_secret,
                          sandbox=config.is_sandbox())
 
@@ -38,12 +38,39 @@ def _to_frame(raw) -> pd.DataFrame:
     return df
 
 
+def _alpaca_public_ohlcv(exchange, symbol, timeframe, since, limit):
+    """Alpaca's crypto price data is public, but ccxt's normal fetch_ohlcv first
+    loads the asset list, which needs API keys. Call the public bars endpoint
+    directly so exploring and backtesting work without any keys."""
+    tf_ms = exchange.parse_timeframe(timeframe) * 1000
+    if since is None:  # Alpaca defaults to "start of today" otherwise
+        since = exchange.milliseconds() - limit * tf_ms
+    request = {"loc": "us", "symbols": symbol, "start": exchange.iso8601(since), "limit": limit,
+               "timeframe": exchange.timeframes.get(timeframe, timeframe)}
+    rows = []
+    while len(rows) < limit:
+        response = exchange.marketPublicGetV1beta3CryptoLocBars(request)
+        page = (response.get("bars") or {}).get(symbol) or []
+        rows.extend(exchange.parse_ohlcv(bar) for bar in page)
+        token = response.get("next_page_token")
+        if not page or not token:
+            break
+        request["page_token"] = token
+    return rows[:limit]
+
+
+def _raw_ohlcv(exchange, symbol, timeframe, since, limit):
+    if getattr(exchange, "id", None) == "alpaca" and not getattr(exchange, "apiKey", None):
+        return _alpaca_public_ohlcv(exchange, symbol, timeframe, since, limit)
+    return exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit, since=since)
+
+
 def fetch_ohlcv(exchange, symbol: str, timeframe: str, limit: int = 500,
                 since: int = None) -> pd.DataFrame:
     """One request's worth of candles. `exchange` is a ccxt exchange or an id string."""
     if isinstance(exchange, str):
         exchange = make_exchange(exchange)
-    return _to_frame(exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit, since=since))
+    return _to_frame(_raw_ohlcv(exchange, symbol, timeframe, since, limit))
 
 
 def fetch_history(exchange, symbol: str, timeframe: str, bars: int) -> pd.DataFrame:
@@ -56,7 +83,7 @@ def fetch_history(exchange, symbol: str, timeframe: str, bars: int) -> pd.DataFr
     since = now - bars * tf_ms
     raw = []
     while since < now:
-        chunk = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=1000)
+        chunk = _raw_ohlcv(exchange, symbol, timeframe, since, 1000)
         if not chunk:
             break
         raw.extend(chunk)

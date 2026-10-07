@@ -25,8 +25,8 @@ class RiskParams:
 
 @dataclass
 class Config:
-    exchange_id: str = os.getenv("EXCHANGE_ID", "binance")
-    symbol: str = os.getenv("SYMBOL", "BTC/USDT")
+    exchange_id: str = os.getenv("EXCHANGE_ID", "alpaca")
+    symbol: str = os.getenv("SYMBOL", "BTC/USD")
     timeframe: str = os.getenv("TIMEFRAME", "1h")
     # "paper"   = local simulation, no account needed
     # "sandbox" = real orders on the exchange's paper/testnet account (e.g. Alpaca paper)

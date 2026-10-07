@@ -103,3 +103,24 @@ def test_exchange_broker_sells_only_what_is_held():
     sold, _ = broker.sell(10.0, 100.0)  # asks for the ordered qty; must sell only what's held
     assert sold == held
     assert broker.exchange.btc == 0
+
+
+def test_alpaca_data_works_without_keys():
+    from tradingbot.data import fetch_history
+    ex = ccxt.alpaca()
+    calls = []
+
+    def fake_bars(request):
+        calls.append(dict(request))
+        start = ex.parse8601(request["start"])
+        n = 3 if "page_token" not in request else 2
+        offset = 0 if "page_token" not in request else 3
+        bars = [{"t": ex.iso8601(start + (offset + i) * 3600_000), "o": 1, "h": 2, "l": 0.5, "c": 1.5, "v": 10}
+                for i in range(n)]
+        return {"bars": {"BTC/USD": bars}, "next_page_token": None if offset else "tok"}
+
+    ex.marketPublicGetV1beta3CryptoLocBars = fake_bars
+    ex.load_markets = lambda *a, **k: (_ for _ in ()).throw(AssertionError("needs keys"))
+    df = fetch_history(ex, "BTC/USD", "1h", bars=5)
+    assert len(df) == 5
+    assert calls[0]["timeframe"] == "1H" and calls[1]["page_token"] == "tok"

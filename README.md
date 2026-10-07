@@ -17,10 +17,17 @@ afford to lose. This is not financial advice.
 ## Setup
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # then edit as needed
+python main.py explore
 ```
+
+That's it for exploring and backtesting: it uses Alpaca's public BTC/USD
+price data, so no account, keys or settings file are needed. (On a Mac you
+may need to type `pip3` / `python3`.)
+
+You only need a `.env` file (copy `.env.example`) when you want to paper
+trade on your Alpaca account (`MODE=sandbox` plus your paper keys) or to
+change settings like the coin or timeframe.
 
 ## How the project is split
 
@@ -42,8 +49,8 @@ The backtest also warns you if an indicator uses future data.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `EXCHANGE_ID` | `binance` | Any [ccxt](https://github.com/ccxt/ccxt) exchange id, e.g. `alpaca` |
-| `SYMBOL` | `BTC/USDT` | Trading pair (`BTC/USD` on Alpaca) |
+| `EXCHANGE_ID` | `alpaca` | Any [ccxt](https://github.com/ccxt/ccxt) exchange id |
+| `SYMBOL` | `BTC/USD` | Trading pair |
 | `TIMEFRAME` | `1h` | Candle timeframe |
 | `MODE` | `paper` | `paper` (local simulation), `sandbox` (exchange paper account, e.g. Alpaca paper), or `live` |
 | `STARTING_BALANCE` | `10000` | Simulated starting cash (backtests and `paper` mode) |
@@ -52,7 +59,7 @@ The backtest also warns you if an indicator uses future data.
 | `TAKER_FEE_PCT` | `0.0025` | Fee per fill used in backtests/paper (Alpaca crypto: 0.25% at the lowest tier) |
 | `STRATEGY` | `my_strategy` | Strategy file to load (without `.py`), to keep several ideas side by side |
 | `STATE_FILE` / `TRADE_LOG` | `state.json` / `trades.csv` | Where the bot saves its position and logs every fill |
-| `EXCHANGE_API_KEY` / `EXCHANGE_API_SECRET` | _(empty)_ | Needed for `sandbox` and `live` (and for Alpaca data) |
+| `EXCHANGE_API_KEY` / `EXCHANGE_API_SECRET` | _(empty)_ | Needed for `sandbox` and `live` only |
 | `I_UNDERSTAND_LIVE_TRADING_RISK` | _(empty)_ | Must be set to `yes` to unlock live mode |
 
 ## Workflow
