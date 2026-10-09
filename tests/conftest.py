@@ -27,3 +27,13 @@ def trending_ohlcv():
 @pytest.fixture
 def choppy_ohlcv():
     return make_synthetic_ohlcv(trend=0.0, vol=0.02)
+
+
+@pytest.fixture(params=["parquet", "csv"])
+def storage_format(request, monkeypatch):
+    """Run a test once with Parquet storage and once with the CSV fallback
+    (what users without pyarrow get)."""
+    if request.param == "parquet":
+        pytest.importorskip("pyarrow")
+    monkeypatch.setattr("tradingbot.store.parquet_available", lambda: request.param == "parquet")
+    return request.param

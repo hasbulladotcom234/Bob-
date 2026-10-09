@@ -45,7 +45,7 @@ def test_retries_rate_limits_but_not_bad_requests(monkeypatch):
     assert len(calls) == 1
 
 
-def test_store_backfills_then_updates_incrementally(tmp_path):
+def test_store_backfills_then_updates_incrementally(tmp_path, storage_format):
     bars = make_bars(T0, 300)
     now = (T0 + 200 * H + H // 2) / 1000      # halfway through bar 200
     fake = FakeAlpacaData({"BTC/USD": bars})
@@ -65,7 +65,7 @@ def test_store_backfills_then_updates_incrementally(tmp_path):
     assert store.symbols("1h") == ["BTC/USD"]
 
 
-def test_store_skips_symbols_without_data(tmp_path):
+def test_store_skips_symbols_without_data(tmp_path, storage_format):
     store = BarStore(root=str(tmp_path))
     r = store.update(FakeAlpacaData({}).exchange, "NOPE/USD", "1h", since="2024-01-01", now=T0 / 1000 + 10 * 3600)
     assert r.total_rows == 0 and store.symbols("1h") == []
@@ -102,7 +102,7 @@ def test_quality_flags_blank_prices():
     assert q["status"] == "bad" and q["blank_prices"] == 1
 
 
-def test_panel_aligns_symbols_and_fills_gaps(tmp_path):
+def test_panel_aligns_symbols_and_fills_gaps(tmp_path, storage_format):
     store = BarStore(root=str(tmp_path))
     store.save("BTC/USD", "1h", _frame(make_bars(T0, 100, seed=1)))
     store.save("SOL/USD", "1h", _frame(make_bars(T0 + 50 * H, 50, seed=2, skip={10})))
@@ -118,3 +118,30 @@ def test_panel_aligns_symbols_and_fills_gaps(tmp_path):
     r = returns(close)
     assert bench["btc_buy_hold"].iloc[-1] == pytest.approx(close["BTC/USD"].iloc[-1] / close["BTC/USD"].iloc[0])
     assert bench["equal_weight"].iloc[10] == pytest.approx((1 + r["BTC/USD"].iloc[1:11]).prod())
+
+
+def test_csv_round_trip_is_exact(tmp_path):
+    df = _frame(make_bars(T0, 200, start_price=0.000012345678))   # tiny prices like SHIB/PEPE
+    store = BarStore(root=str(tmp_path), use_parquet=False)
+    store.save("PEPE/USD", "1h", df)
+    assert store.path("PEPE/USD", "1h").endswith(".csv")
+    back = store.load("PEPE/USD", "1h")
+    assert (back["timestamp"] == df["timestamp"]).all()
+    assert (back[["open", "high", "low", "close", "volume"]].values == df[["open", "high", "low", "close", "volume"]].values).all()
+
+
+def test_switching_format_converts_and_keeps_one_copy(tmp_path):
+    pytest.importorskip("pyarrow")
+    import os
+    df = _frame(make_bars(T0, 50))
+    csv_store = BarStore(root=str(tmp_path), use_parquet=False)
+    csv_store.save("BTC/USD", "1h", df)
+    pq_store = BarStore(root=str(tmp_path), use_parquet=True)
+    assert len(pq_store.load("BTC/USD", "1h")) == 50          # reads the CSV
+    pq_store.save("BTC/USD", "1h", pq_store.load("BTC/USD", "1h"))
+    assert os.path.exists(pq_store.path("BTC/USD", "1h"))
+    assert not os.path.exists(csv_store.path("BTC/USD", "1h"))
+    assert pq_store.symbols("1h") == ["BTC/USD"]
+
+    with pytest.raises(RuntimeError, match="pyarrow"):
+        csv_store.load("BTC/USD", "1h")                         # parquet file, no pyarrow: clear message

@@ -1,8 +1,12 @@
 """Local market-data store.
 
-Candles are downloaded once and kept as Parquet files:
+Candles are downloaded once and kept as one file per symbol:
 
-    data/<exchange>/<timeframe>/<BASE-QUOTE>.parquet
+    data/<exchange>/<timeframe>/<BASE-QUOTE>.parquet   (if pyarrow is installed)
+    data/<exchange>/<timeframe>/<BASE-QUOTE>.csv       (otherwise)
+
+Parquet is smaller and faster; CSV needs nothing extra installed. Either is
+read back transparently, and saving converts a symbol to the preferred format.
 
 Updates only fetch what's new, so research is fast, works offline, and two
 runs on the same data give the same answer. Only finished bars are stored.
@@ -18,6 +22,15 @@ from .data import COLUMNS, closed_bars, fetch_range
 DEFAULT_ROOT = os.getenv("DATA_DIR", "data")
 DEFAULT_SINCE = os.getenv("DATA_SINCE", "2021-01-01")
 REFETCH_BARS = 3  # re-download the last few stored bars in case the exchange revised them
+FORMATS = (".parquet", ".csv")
+
+
+def parquet_available() -> bool:
+    try:
+        import pyarrow  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 @dataclass
@@ -30,25 +43,47 @@ class UpdateResult:
 
 
 class BarStore:
-    def __init__(self, root: str = DEFAULT_ROOT, exchange_id: str = "alpaca"):
+    def __init__(self, root: str = DEFAULT_ROOT, exchange_id: str = "alpaca", use_parquet: bool = None):
         self.root = root
         self.exchange_id = exchange_id
+        self.use_parquet = parquet_available() if use_parquet is None else use_parquet
 
-    def path(self, symbol: str, timeframe: str) -> str:
-        return os.path.join(self.root, self.exchange_id, timeframe, symbol.replace("/", "-") + ".parquet")
+    def path(self, symbol: str, timeframe: str, ext: str = None) -> str:
+        ext = ext or (".parquet" if self.use_parquet else ".csv")
+        return os.path.join(self.root, self.exchange_id, timeframe, symbol.replace("/", "-") + ext)
+
+    def _existing_path(self, symbol: str, timeframe: str):
+        preferred = (".parquet", ".csv") if self.use_parquet else (".csv", ".parquet")
+        for ext in preferred:
+            path = self.path(symbol, timeframe, ext)
+            if os.path.exists(path) and (ext == ".csv" or self.use_parquet):
+                return path
+        return None
 
     def symbols(self, timeframe: str) -> list:
         folder = os.path.join(self.root, self.exchange_id, timeframe)
         if not os.path.isdir(folder):
             return []
-        return sorted(f[:-len(".parquet")].replace("-", "/") for f in os.listdir(folder) if f.endswith(".parquet"))
+        names = set()
+        for f in os.listdir(folder):
+            for ext in FORMATS:
+                if f.endswith(ext):
+                    names.add(f[:-len(ext)].replace("-", "/"))
+        return sorted(names)
 
     def load(self, symbol: str, timeframe: str, start=None, end=None) -> pd.DataFrame:
         """Stored candles for one symbol, optionally between start and end (inclusive)."""
-        path = self.path(symbol, timeframe)
-        if not os.path.exists(path):
+        path = self._existing_path(symbol, timeframe)
+        if path is None:
+            if os.path.exists(self.path(symbol, timeframe, ".parquet")):
+                raise RuntimeError(f"{symbol} is stored as Parquet but pyarrow isn't installed. "
+                                   f"Install it (pip install pyarrow) or delete the file to re-download.")
             return pd.DataFrame(columns=COLUMNS)
-        df = pd.read_parquet(path)
+        if path.endswith(".parquet"):
+            df = pd.read_parquet(path)
+        else:
+            df = pd.read_csv(path, parse_dates=["timestamp"], float_precision="round_trip")
+            df[COLUMNS[1:]] = df[COLUMNS[1:]].astype(float)
         if start is not None:
             df = df[df["timestamp"] >= pd.Timestamp(start)]
         if end is not None:
@@ -59,8 +94,15 @@ class BarStore:
         path = self.path(symbol, timeframe)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
-        df[COLUMNS].to_parquet(tmp, index=False)
+        if self.use_parquet:
+            df[COLUMNS].to_parquet(tmp, index=False)
+        else:
+            df[COLUMNS].to_csv(tmp, index=False)  # full float precision, round-trips exactly
         os.replace(tmp, path)  # atomic: a crash mid-write never leaves a half-written file
+        for ext in FORMATS:  # drop a copy in the other format so there's one source of truth
+            other = self.path(symbol, timeframe, ext)
+            if other != path and os.path.exists(other):
+                os.remove(other)
 
     def update(self, exchange, symbol: str, timeframe: str, since: str = DEFAULT_SINCE,
                now: float = None) -> UpdateResult:

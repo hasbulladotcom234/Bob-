@@ -12,7 +12,7 @@ def run(argv):
     args.fn(args)
 
 
-def test_data_pipeline_end_to_end(tmp_path, monkeypatch, capsys):
+def test_data_pipeline_end_to_end(tmp_path, monkeypatch, capsys, storage_format):
     monkeypatch.chdir(tmp_path)
     fake = FakeAlpacaData({
         "BTC/USD": make_bars(T0, 2000, seed=1, start_price=40000),

@@ -17,8 +17,11 @@ afford to lose. This is not financial advice.
 ## Quick start: paper trading in about 2 minutes
 
 1. Download the code (on GitHub: **Code → Download ZIP**) and unzip it.
-   You need [Python](https://www.python.org/downloads/) installed (on
-   Windows, tick "Add to PATH" in the installer).
+   You need [Python](https://www.python.org/downloads/) **3.11 to 3.14**
+   installed (on Windows, tick "Add to PATH" in the installer). Brand-new
+   Python releases (3.15 at the time of writing) can't install every add-on
+   yet. If you have several versions, run commands with `py -3.14` instead
+   of `python`.
 2. Double-click **`start.bat`** (Windows) or **`start.command`** (Mac; if it
    won't open, run `bash start.command` in Terminal).
 3. The first time, it asks for your Alpaca **paper** API key and secret,
@@ -47,6 +50,9 @@ python main.py data update --timeframe 1d   # daily bars too
 python main.py data check                   # quality report: gaps, bad prints, stale data
 python main.py data benchmarks              # how each coin and the equal-weight basket did
 ```
+
+Files are Parquet if `pyarrow` is installed (`pip install pyarrow`: smaller
+and faster), otherwise plain CSV. Both work the same way.
 
 `backtest`, `explore` and `optimize` read from this store (updating the
 one coin they need first). The coin list lives in `tradingbot/universe.py`,
@@ -172,7 +178,7 @@ tradingbot/
   config.py      # settings, env vars, risk limits, live-trading safety gate
   universe.py    # which coins to research and trade
   data.py        # exchange connections, paged downloads with retries, closed-bar filtering
-  store.py       # local Parquet history with incremental updates
+  store.py       # local history (Parquet or CSV) with incremental updates
   quality.py     # data quality checks
   panel.py       # multi-coin tables (one column per coin), benchmarks
   metrics.py     # performance statistics (CAGR, Sharpe, drawdown, Calmar)
