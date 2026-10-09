@@ -1,6 +1,8 @@
 """CLI entry point.
 
 Usage:
+    python main.py setup           # connect your Alpaca paper account (2 minutes)
+    python main.py status          # check the connection, balance, position and latest signal
     python main.py explore         # statistical facts about the market, to ground ideas in data
     python main.py backtest        # test my_strategy.py on historical data
     python main.py optimize        # search my_strategy.py's PARAM_GRID with a train/test split
@@ -14,6 +16,7 @@ from tradingbot.config import Config
 from tradingbot.data import exchange_from_config, fetch_history
 from tradingbot.explore import report
 from tradingbot.optimizer import grid_search
+from tradingbot.setup_wizard import run_setup
 
 
 def load_history(config):
@@ -21,6 +24,17 @@ def load_history(config):
     print(f"{len(df)} {config.timeframe} bars of {config.symbol}: "
           f"{df['timestamp'].iloc[0]} -> {df['timestamp'].iloc[-1]}\n")
     return df
+
+
+def cmd_setup():
+    run_setup()
+
+
+def cmd_status():
+    from tradingbot.bot import Bot
+    config = Config()
+    print(f"Mode: {config.mode} | {config.exchange_id} {config.symbol} {config.timeframe}")
+    Bot(config).step(dry_run=True)  # read-only: never places orders
 
 
 def cmd_explore():
@@ -63,7 +77,7 @@ def cmd_run():
     run_forever(Config())
 
 
-COMMANDS = {"explore": cmd_explore, "backtest": cmd_backtest, "optimize": cmd_optimize, "run": cmd_run}
+COMMANDS = {"setup": cmd_setup, "status": cmd_status, "explore": cmd_explore, "backtest": cmd_backtest, "optimize": cmd_optimize, "run": cmd_run}
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:

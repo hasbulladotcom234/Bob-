@@ -14,20 +14,26 @@ get too deep. That is what a real trading system looks like. Past backtest
 performance does not guarantee future results. Only trade money you can
 afford to lose. This is not financial advice.
 
-## Setup
+## Quick start: paper trading in about 2 minutes
+
+1. Download the code (on GitHub: **Code → Download ZIP**) and unzip it.
+   You need [Python](https://www.python.org/downloads/) installed (on
+   Windows, tick "Add to PATH" in the installer).
+2. Double-click **`start.bat`** (Windows) or **`start.command`** (Mac; if it
+   won't open, run `bash start.command` in Terminal).
+3. The first time, it asks for your Alpaca **paper** API key and secret,
+   checks them with Alpaca, and saves them. Then the bot starts trading on
+   your paper account. Next time, double-clicking just starts the bot.
+
+Other commands (run in a terminal in the project folder):
 
 ```bash
-pip install -r requirements.txt
-python main.py explore
+python main.py status     # balance, position and what the strategy says now (never trades)
+python main.py explore    # statistical facts about the market (no keys needed)
+python main.py backtest   # test my_strategy.py on history (no keys needed)
+python main.py optimize   # tune my_strategy.py's parameters (no keys needed)
+python main.py setup      # re-enter your paper keys
 ```
-
-That's it for exploring and backtesting: it uses Alpaca's public BTC/USD
-price data, so no account, keys or settings file are needed. (On a Mac you
-may need to type `pip3` / `python3`.)
-
-You only need a `.env` file (copy `.env.example`) when you want to paper
-trade on your Alpaca account (`MODE=sandbox` plus your paper keys) or to
-change settings like the coin or timeframe.
 
 ## How the project is split
 

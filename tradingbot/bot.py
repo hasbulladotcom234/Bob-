@@ -106,7 +106,9 @@ class Bot:
         log.info("BUY %.8f at %.2f stop=%.2f take=%.2f", held, fill, self.position["stop"], self.position["take"])
         self._journal("buy", held, fill, "signal", equity)
 
-    def step(self, now: float = None):
+    def step(self, now: float = None, dry_run: bool = False):
+        """One pass of the loop. dry_run=True only reports what it would do:
+        no orders, no state changes."""
         candles = closed_bars(fetch_ohlcv(self.exchange, self.config.symbol, self.config.timeframe,
                                           limit=LIVE_BARS), self.tf_seconds, now)
         if candles.empty:
@@ -119,6 +121,14 @@ class Bot:
         equity = self.broker.get_equity(price)
         today = datetime.now(timezone.utc).date()
         halted = self.risk.check_daily_circuit_breaker(today, equity)
+
+        if dry_run:
+            data = with_indicators(candles, self.strat, self.params)
+            action = decide(Bars(data), len(data) - 1, self.position is not None, self.strat, self.params)
+            log.info("Price %.2f | Equity %.2f | %s | latest bar %s -> strategy says %s",
+                     price, equity, f"holding {self.position['qty']:.8f}" if self.position else "flat",
+                     candles["timestamp"].iloc[-1], action)
+            return action
 
         # protective exits, checked every poll
         if self.position:

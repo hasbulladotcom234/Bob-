@@ -124,3 +124,11 @@ def test_alpaca_data_works_without_keys():
     df = fetch_history(ex, "BTC/USD", "1h", bars=5)
     assert len(df) == 5
     assert calls[0]["timeframe"] == "1H" and calls[1]["page_token"] == "tok"
+
+
+def test_dry_run_never_trades(tmp_path):
+    import os
+    bot, ex, config = make_bot(tmp_path, lambda bar, prev, pos, p: "buy")
+    assert bot.step(now=1e12, dry_run=True) == "buy"
+    assert bot.position is None and bot.broker.cash == config.starting_balance
+    assert not os.path.exists(config.trade_log) and not os.path.exists(config.state_file)
