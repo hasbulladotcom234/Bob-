@@ -2,7 +2,8 @@ import types
 
 import pandas as pd
 
-from tradingbot.backtester import periods_per_year, run_backtest
+from tradingbot.backtester import run_backtest
+from tradingbot.metrics import periods_per_year
 from tradingbot.config import Config
 
 

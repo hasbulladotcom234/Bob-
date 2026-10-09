@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from .config import Config
+from .metrics import periods_per_year
 from .risk import RiskManager
 from .strategy import Bars, decide, load_strategy, lookahead_columns, with_indicators
 
@@ -30,14 +31,6 @@ class BacktestResult:
     sharpe: float
     exposure_pct: float          # share of bars spent holding a position
     lookahead_warning: list      # indicator columns that peek at future data
-
-
-def periods_per_year(timestamps: pd.Series) -> float:
-    """Crypto trades 24/7, so a year has 365 days of bars."""
-    if len(timestamps) < 2:
-        return 0.0
-    step = pd.Series(timestamps).diff().median().total_seconds()
-    return 365 * 24 * 3600 / step if step else 0.0
 
 
 def run_backtest(df: pd.DataFrame, config: Config, strat=None, params: dict = None,

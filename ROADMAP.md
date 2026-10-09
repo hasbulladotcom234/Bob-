@@ -20,7 +20,7 @@ Each phase takes a few days. Finish a phase before starting the next one.
 - Backtester with next-bar fills, fees, lookahead check
 - Setup wizard, status check, trade journal, restart-safe state
 
-## Phase 1: Data
+## Phase 1: Data (built; needs a first run on real data)
 Nothing downstream is better than its data.
 - Download years of history once and store it locally (Parquet), with
   incremental updates instead of re-downloading every run

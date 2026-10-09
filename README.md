@@ -35,6 +35,27 @@ python main.py optimize   # tune my_strategy.py's parameters (no keys needed)
 python main.py setup      # re-enter your paper keys
 ```
 
+## Market data
+
+History is downloaded once into `data/` (Parquet files, one per coin and
+timeframe) and only new bars are fetched after that, so research is fast,
+works offline, and gives the same answer every time.
+
+```bash
+python main.py data update                  # every coin in the universe, 1h bars, since 2021
+python main.py data update --timeframe 1d   # daily bars too
+python main.py data check                   # quality report: gaps, bad prints, stale data
+python main.py data benchmarks              # how each coin and the equal-weight basket did
+```
+
+`backtest`, `explore` and `optimize` read from this store (updating the
+one coin they need first). The coin list lives in `tradingbot/universe.py`,
+or set `UNIVERSE=BTC/USD,ETH/USD,...` in `.env`.
+
+Missing bars are normal for smaller coins: Alpaca only creates a bar when
+something traded. `data check` reports how many are missing, and the
+multi-coin loader fills them with the last price (zero volume).
+
 ## How the project is split
 
 - **`my_strategy.py` is yours.** It holds the trading idea: which
@@ -146,18 +167,25 @@ Tune these in `tradingbot/config.py` (`RiskParams`).
 
 ```
 my_strategy.py   # YOUR strategy: indicators, buy/sell rules, parameters
-main.py          # CLI: backtest / optimize / run
+main.py          # command line: setup / status / run / data / explore / backtest / optimize
 tradingbot/
   config.py      # settings, env vars, risk limits, live-trading safety gate
+  universe.py    # which coins to research and trade
+  data.py        # exchange connections, paged downloads with retries, closed-bar filtering
+  store.py       # local Parquet history with incremental updates
+  quality.py     # data quality checks
+  panel.py       # multi-coin tables (one column per coin), benchmarks
+  metrics.py     # performance statistics (CAGR, Sharpe, drawdown, Calmar)
   indicators.py  # EMA, RSI (add your own helpers here)
   strategy.py    # loads my_strategy.py, lookahead check
   risk.py        # position sizing, stop/take levels, daily circuit breaker
   backtester.py  # bar-by-bar backtest with next-open fills
   optimizer.py   # grid search over PARAM_GRID with a train/test split
+  explore.py     # statistical report for one coin
   brokers.py     # PaperBroker (simulated) and ExchangeBroker (ccxt orders, sandbox or live)
-  data.py        # ccxt exchange setup, history paging, closed-bar filtering
   bot.py         # live loop, saved state, trade journal
-tests/           # pytest unit tests (synthetic data, no network calls)
+  setup_wizard.py# paper-account setup
+tests/           # pytest suite (fake exchange, no network calls)
 ```
 
 ## Testing

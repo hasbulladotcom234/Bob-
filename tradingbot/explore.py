@@ -6,7 +6,7 @@ strategy; it's where ideas for one come from.
 import numpy as np
 import pandas as pd
 
-from .backtester import periods_per_year
+from .metrics import periods_per_year
 
 
 def autocorr_table(returns: pd.Series, lags=(1, 2, 3, 6, 12, 24)) -> pd.DataFrame:
