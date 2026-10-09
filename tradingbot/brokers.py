@@ -10,6 +10,8 @@ import logging
 import time
 from abc import ABC, abstractmethod
 
+import ccxt
+
 from .config import Config
 from .data import exchange_from_config
 
@@ -73,12 +75,23 @@ class PaperBroker(Broker):
         self.coin = state.get("paper_coin", self.coin)
 
 
+MIN_CCXT_FOR_ALPACA = (4, 5, 81)  # before this, Alpaca balances left out crypto holdings
+
+
+def _version_tuple(version: str) -> tuple:
+    return tuple(int(p) for p in version.split(".")[:3] if p.isdigit())
+
+
 class ExchangeBroker(Broker):
     """Real orders via ccxt. Sandbox mode trades the exchange's paper account
     (fake money); live mode requires Config.validate_live_trading_allowed()."""
 
     def __init__(self, config: Config):
         self.config = config
+        if config.exchange_id == "alpaca" and _version_tuple(ccxt.__version__) < MIN_CCXT_FOR_ALPACA:
+            raise RuntimeError(
+                f"ccxt {ccxt.__version__} doesn't report crypto holdings in Alpaca balances, so the bot "
+                f"couldn't see or sell its own coins. Update it with: python install.py")
         if config.is_sandbox():
             config.validate_sandbox_allowed()
         else:

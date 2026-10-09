@@ -203,6 +203,4 @@ if __name__ == "__main__":
         args.fn(args)
     except ModuleNotFoundError as err:
         sys.exit(f"\nMissing add-on '{err.name}'. Install the project's add-ons with:\n"
-                 f"    python -m pip install -r requirements.txt\n"
-                 f"This project needs Python 3.11 to 3.14 (you have {sys.version.split()[0]}). "
-                 f"Brand-new Python versions can't install every add-on yet.")
+                 f"    python install.py")

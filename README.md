@@ -17,16 +17,18 @@ afford to lose. This is not financial advice.
 ## Quick start: paper trading in about 2 minutes
 
 1. Download the code (on GitHub: **Code → Download ZIP**) and unzip it.
-   You need [Python](https://www.python.org/downloads/) **3.11 to 3.14**
-   installed (on Windows, tick "Add to PATH" in the installer). Brand-new
-   Python releases (3.15 at the time of writing) can't install every add-on
-   yet. If you have several versions, run commands with `py -3.14` instead
-   of `python`.
+   You need [Python](https://www.python.org/downloads/) 3.11 or newer
+   (on Windows, tick "Add to PATH" in the installer).
 2. Double-click **`start.bat`** (Windows) or **`start.command`** (Mac; if it
    won't open, run `bash start.command` in Terminal).
 3. The first time, it asks for your Alpaca **paper** API key and secret,
    checks them with Alpaca, and saves them. Then the bot starts trading on
    your paper account. Next time, double-clicking just starts the bot.
+
+To install by hand instead, open a terminal in the project folder and run
+`python install.py`. It's `pip install -r requirements.txt` that never needs
+a compiler: on computers where an add-on has no ready-made version (e.g.
+Windows on ARM laptops) it skips optional pieces and checks everything works.
 
 Other commands (run in a terminal in the project folder):
 

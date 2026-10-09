@@ -132,3 +132,13 @@ def test_dry_run_never_trades(tmp_path):
     assert bot.step(now=1e12, dry_run=True) == "buy"
     assert bot.position is None and bot.broker.cash == config.starting_balance
     assert not os.path.exists(config.trade_log) and not os.path.exists(config.state_file)
+
+
+def test_exchange_broker_refuses_old_ccxt_on_alpaca(monkeypatch):
+    import pytest
+    from tradingbot.brokers import ExchangeBroker
+    monkeypatch.setattr("tradingbot.brokers.ccxt.__version__", "4.5.64")
+    config = Config()
+    config.exchange_id, config.mode, config.api_key, config.api_secret = "alpaca", "sandbox", "PK", "s"
+    with pytest.raises(RuntimeError, match="install.py"):
+        ExchangeBroker(config)

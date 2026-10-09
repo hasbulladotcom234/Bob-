@@ -4,6 +4,6 @@
 cd "$(dirname "$0")"
 PY=$(command -v python3 || command -v python)
 if [ -z "$PY" ]; then echo "Python not found. Install it from https://www.python.org/downloads/"; exit 1; fi
-"$PY" -m pip install -q -r requirements.txt
+"$PY" install.py || exit 1
 [ -f .env ] || "$PY" main.py setup
 [ -f .env ] && "$PY" main.py run
