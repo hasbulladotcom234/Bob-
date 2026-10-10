@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from .cleaning import clean_bars
 from .data import COLUMNS, closed_bars, fetch_range
 
 DEFAULT_ROOT = os.getenv("DATA_DIR", "data")
@@ -71,8 +72,10 @@ class BarStore:
                     names.add(f[:-len(ext)].replace("-", "/"))
         return sorted(names)
 
-    def load(self, symbol: str, timeframe: str, start=None, end=None) -> pd.DataFrame:
-        """Stored candles for one symbol, optionally between start and end (inclusive)."""
+    def load(self, symbol: str, timeframe: str, start=None, end=None, clean: bool = True) -> pd.DataFrame:
+        """Stored candles for one symbol, optionally between start and end
+        (inclusive). With clean=True (the default) bad prints are removed;
+        see tradingbot/cleaning.py. The file on disk is never changed."""
         path = self._existing_path(symbol, timeframe)
         if path is None:
             if os.path.exists(self.path(symbol, timeframe, ".parquet")):
@@ -84,6 +87,8 @@ class BarStore:
         else:
             df = pd.read_csv(path, parse_dates=["timestamp"], float_precision="round_trip")
             df[COLUMNS[1:]] = df[COLUMNS[1:]].astype(float)
+        if clean:
+            df = clean_bars(df)[0]
         if start is not None:
             df = df[df["timestamp"] >= pd.Timestamp(start)]
         if end is not None:
@@ -108,7 +113,7 @@ class BarStore:
                now: float = None) -> UpdateResult:
         """Download new bars for one symbol and merge them into the store."""
         tf_seconds = exchange.parse_timeframe(timeframe)
-        existing = self.load(symbol, timeframe)
+        existing = self.load(symbol, timeframe, clean=False)
         if existing.empty:
             start = pd.Timestamp(since)
         else:

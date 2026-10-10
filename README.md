@@ -51,7 +51,15 @@ python main.py data update                  # every coin in the universe, 1h bar
 python main.py data update --timeframe 1d   # daily bars too
 python main.py data check                   # quality report: gaps, bad prints, stale data
 python main.py data benchmarks              # how each coin and the equal-weight basket did
+python main.py data inspect PEPE/USD        # one coin: data holes, bad prices fixed, biggest moves
 ```
+
+The raw downloaded data is never modified. When it's loaded, bad prices
+("bad prints": a price far from both the bars before and after it, which
+snaps straight back) are removed, and stray highs/lows are clipped, so they
+can't create fake returns or trigger fake stop-losses. Real big moves stay,
+because the price after them stays at the new level. Rules and thresholds
+are in `tradingbot/cleaning.py`.
 
 Files are Parquet if `pyarrow` is installed (`pip install pyarrow`: smaller
 and faster), otherwise plain CSV. Both work the same way.
@@ -61,8 +69,10 @@ one coin they need first). The coin list lives in `tradingbot/universe.py`,
 or set `UNIVERSE=BTC/USD,ETH/USD,...` in `.env`.
 
 Missing bars are normal for smaller coins: Alpaca only creates a bar when
-something traded. `data check` reports how many are missing, and the
-multi-coin loader fills them with the last price (zero volume).
+something traded. The multi-coin loader fills holes of up to a day with the
+last price (zero volume). Longer holes are data outages and stay empty, so
+no return is computed across them, and coins that stopped trading
+(delisted) stay empty after their last bar instead of looking flat.
 
 ## How the project is split
 
@@ -182,6 +192,7 @@ tradingbot/
   data.py        # exchange connections, paged downloads with retries, closed-bar filtering
   store.py       # local history (Parquet or CSV) with incremental updates
   quality.py     # data quality checks
+  cleaning.py    # bad-print removal, data-hole listing
   panel.py       # multi-coin tables (one column per coin), benchmarks
   metrics.py     # performance statistics (CAGR, Sharpe, drawdown, Calmar)
   indicators.py  # EMA, RSI (add your own helpers here)

@@ -48,6 +48,10 @@ def test_data_pipeline_end_to_end(tmp_path, monkeypatch, capsys, storage_format)
     out = capsys.readouterr().out
     assert "equal_weight" in out and "NaN" not in out.split("equal_weight =")[0].replace("calmar", "")
 
+    run(["data", "inspect", "ETH/USD", "--timeframe", "1h"])
+    out = capsys.readouterr().out
+    assert "Data holes" in out and "Fixed by cleaning" in out and "Biggest one-bar moves" in out
+
     monkeypatch.setattr(main, "Config", lambda: _config("BTC/USD"))
     run(["backtest"])
     out = capsys.readouterr().out

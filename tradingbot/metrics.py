@@ -12,17 +12,22 @@ def periods_per_year(index) -> float:
 
 
 def performance(equity: pd.Series) -> dict:
-    """Standard stats for an equity curve (or any growth-of-$1 series) indexed by timestamp."""
-    equity = equity.dropna()
-    if len(equity) < 2:
+    """Standard stats for an equity curve (or any growth-of-$1 series) indexed
+    by timestamp. NaN stretches inside the series (data holes) are skipped
+    when measuring volatility, so a jump across a hole isn't counted as one
+    giant move; total return still runs from the first to the last value."""
+    first, last = equity.first_valid_index(), equity.last_valid_index()
+    if first is None or first == last:
         return {}
+    equity = equity.loc[first:last]
     ppy = periods_per_year(equity.index)
-    r = equity.pct_change().dropna()
-    years = len(r) / ppy if ppy else np.nan
-    total = equity.iloc[-1] / equity.iloc[0] - 1
+    r = equity.pct_change(fill_method=None).dropna()
+    years = (last - first).total_seconds() / (365 * 24 * 3600)
+    total = equity[last] / equity[first] - 1
     cagr = (1 + total) ** (1 / years) - 1 if years and total > -1 else np.nan
     vol = r.std() * np.sqrt(ppy)
-    dd = (equity / equity.cummax() - 1).min()
+    held = equity.dropna()
+    dd = (held / held.cummax() - 1).min()
     return {
         "total_return_pct": 100 * total,
         "cagr_pct": 100 * cagr,

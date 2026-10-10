@@ -7,6 +7,7 @@
     python main.py data update        download / update history for every coin
     python main.py data check         data quality report
     python main.py data benchmarks    how every coin and the basket performed
+    python main.py data inspect PEPE/USD   holes, bad prices and biggest moves for one coin
 
     python main.py explore            statistical facts about one coin
     python main.py backtest           test my_strategy.py on history
@@ -102,8 +103,7 @@ def cmd_data_check(args):
     report = quality_report(store, timeframe, tf_seconds)
     if report.empty:
         sys.exit("No stored data yet. Run: python main.py data update")
-    cols = ["symbol", "status", "rows", "first", "last", "coverage_pct", "longest_gap_bars",
-            "spikes", "issues"]
+    cols = ["symbol", "status", "rows", "first", "last", "coverage_pct", "bad_prints", "bad_wicks", "issues"]
     with pd.option_context("display.width", 200, "display.max_colwidth", 60):
         print(report[cols].to_string(index=False, float_format=lambda x: f"{x:.1f}"))
     print("\nstatus: ok = clean | warn = usable, read the issue | bad = corrupt bars, don't trust it")
@@ -111,7 +111,7 @@ def cmd_data_check(args):
 
 def cmd_data_benchmarks(args):
     from tradingbot.metrics import performance_table
-    from tradingbot.panel import benchmarks, load_panel
+    from tradingbot.panel import benchmarks, load_panel, to_daily
     from tradingbot.store import BarStore
     config = Config()
     timeframe = args.timeframe or config.timeframe
@@ -119,13 +119,44 @@ def cmd_data_benchmarks(args):
     symbols = store.symbols(timeframe)
     if not symbols:
         sys.exit("No stored data yet. Run: python main.py data update")
-    close = load_panel(store, symbols, timeframe, start=args.start)
-    curves = pd.concat([benchmarks(close), close / close.bfill().iloc[0]], axis=1)
+    daily = to_daily(load_panel(store, symbols, timeframe, start=args.start))
+    curves = pd.concat([benchmarks(daily), daily / daily.bfill().iloc[0]], axis=1)
     table = performance_table(curves).sort_values("sharpe", ascending=False)
-    print(f"{close.index[0]} -> {close.index[-1]}, buy & hold, no costs\n")
+    print(f"{daily.index[0]:%Y-%m-%d} -> {daily.index[-1]:%Y-%m-%d}, daily closes, buy & hold, no costs\n")
     print(table.to_string(float_format=lambda x: f"{x:.2f}"))
-    print("\nequal_weight = every coin in equal amounts, rebalanced each bar. "
-          "Coins that started later are measured from their first bar.")
+    print("\nequal_weight = every coin in equal amounts, rebalanced daily. Coins that started later "
+          "(or stopped, like delisted ones) count only while they traded.\n"
+          "Volatility and Sharpe skip data holes, so a price jump across a hole isn't counted as one move.")
+
+
+def cmd_data_inspect(args):
+    from tradingbot.cleaning import clean_bars, gaps
+    from tradingbot.data import make_exchange
+    from tradingbot.store import BarStore
+    config = Config()
+    timeframe = args.timeframe or config.timeframe
+    raw = BarStore(exchange_id=config.exchange_id).load(args.symbol, timeframe, clean=False)
+    if raw.empty:
+        sys.exit(f"No stored data for {args.symbol} {timeframe}.")
+    tf_seconds = make_exchange(config.exchange_id).parse_timeframe(timeframe)
+    clean, rep = clean_bars(raw)
+    fmt = lambda x: f"{x:.6g}"
+    with pd.option_context("display.width", 200, "display.max_rows", 200):
+        print(f"{args.symbol} {timeframe}: {len(raw)} bars, {raw['timestamp'].iloc[0]} -> {raw['timestamp'].iloc[-1]}\n")
+        g = gaps(raw, tf_seconds)
+        print(f"== Data holes of a day or more: {len(g)}")
+        if len(g):
+            print(g.to_string(index=False, float_format=fmt))
+        print(f"\n== Fixed by cleaning: {rep['bad_closes']} bad closes, {rep['bad_opens']} bad opens, "
+              f"{rep['bad_wicks']} bad wicks")
+        if len(rep["changes"]):
+            print(rep["changes"].head(args.limit).to_string(index=False, float_format=fmt))
+            if len(rep["changes"]) > args.limit:
+                print(f"... and {len(rep['changes']) - args.limit} more")
+        moves = clean.assign(move_pct=100 * clean["close"].pct_change()).dropna()
+        top = moves.reindex(moves["move_pct"].abs().sort_values(ascending=False).index).head(10)
+        print("\n== Biggest one-bar moves left after cleaning (should look like real market moves):")
+        print(top[["timestamp", "open", "high", "low", "close", "move_pct"]].to_string(index=False, float_format=fmt))
 
 
 # ---- research --------------------------------------------------------------
@@ -193,6 +224,11 @@ def build_parser():
     bm.add_argument("--timeframe")
     bm.add_argument("--start", help="only from this date, e.g. 2023-01-01")
     bm.set_defaults(fn=cmd_data_benchmarks)
+    ins = data.add_parser("inspect", help="holes, bad prices and biggest moves for one coin")
+    ins.add_argument("symbol", help="e.g. PEPE/USD")
+    ins.add_argument("--timeframe")
+    ins.add_argument("--limit", type=int, default=30, help="max fixes to list")
+    ins.set_defaults(fn=cmd_data_inspect)
     return parser
 
 

@@ -20,12 +20,14 @@ Each phase takes a few days. Finish a phase before starting the next one.
 - Backtester with next-bar fills, fees, lookahead check
 - Setup wizard, status check, trade journal, restart-safe state
 
-## Phase 1: Data (built; needs a first run on real data)
+## Phase 1: Data (done; first real-data run found bad prints, a 417-day SOL hole and a delisted coin, now handled)
 Nothing downstream is better than its data.
 - Download years of history once and store it locally (Parquet), with
   incremental updates instead of re-downloading every run
 - Every coin Alpaca offers, not just BTC
 - Data quality checks: missing bars, duplicate bars, bad prints, stale prices
+- Cleaning on load (raw data kept): bad prints removed, stray wicks clipped,
+  long holes and delisted coins never bridged
 - Benchmark series (e.g. BTC buy & hold, equal-weight basket)
 
 ## Phase 2: Research framework

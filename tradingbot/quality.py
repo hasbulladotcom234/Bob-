@@ -9,8 +9,10 @@ import time
 import numpy as np
 import pandas as pd
 
-SPIKE_ROBUST_Z = 10.0   # a move this many robust standard deviations from normal...
-SPIKE_MIN_MOVE = 0.10   # ...and at least 10% in one bar is flagged as a possible bad print
+from .cleaning import clean_bars
+
+LONG_GAP_BARS = 24        # holes longer than this are data outages, not quiet trading
+DELISTED_AFTER_DAYS = 7   # no new bars for this long: probably delisted or halted
 
 
 def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> dict:
@@ -31,9 +33,9 @@ def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> d
     nonpositive = int((prices <= 0).any(axis=1).sum())
     blank = int(prices.isna().any(axis=1).sum())
 
-    r = np.log(c).diff().dropna()
-    mad = (r - r.median()).abs().median() * 1.4826  # robust std: not inflated by the spikes themselves
-    spikes = int((((r - r.median()).abs() > SPIKE_ROBUST_Z * mad) & (r.abs() > SPIKE_MIN_MOVE)).sum()) if mad > 0 else 0
+    _, cleaning = clean_bars(df) if not (ohlc_bad or nonpositive or blank) else (None, {})
+    bad_prints = cleaning.get("bad_closes", 0) + cleaning.get("bad_opens", 0)
+    bad_wicks = cleaning.get("bad_wicks", 0)
 
     runs = (c != c.shift()).cumsum()
     longest_flat = int(c.groupby(runs).size().max())
@@ -47,11 +49,13 @@ def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> d
         "last": ts.iloc[-1],
         "coverage_pct": 100 * ts.nunique() / expected,
         "longest_gap_bars": longest_gap,
+        "longest_gap_start": ts.iloc[int(gaps.values.argmax()) - 1] if longest_gap else None,
         "duplicates": int(ts.duplicated().sum()),
         "ohlc_violations": ohlc_bad,
         "nonpositive_prices": nonpositive,
         "blank_prices": blank,
-        "spikes": spikes,
+        "bad_prints": bad_prints,
+        "bad_wicks": bad_wicks,
         "longest_flat_bars": longest_flat,
         "zero_volume_pct": 100 * (df["volume"] <= 0).mean(),
         "hours_since_last_bar": age_hours,
@@ -61,11 +65,15 @@ def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> d
     if out["duplicates"] or ohlc_bad or nonpositive or blank:
         status = "bad"
         issues.append("corrupt bars")
-    if out["coverage_pct"] < 95:
+    if longest_gap > LONG_GAP_BARS:
+        issues.append(f"data hole of {longest_gap} bars from {out['longest_gap_start']:%Y-%m-%d}")
+    elif out["coverage_pct"] < 95:
         issues.append(f"{100 - out['coverage_pct']:.0f}% of bars missing (thinly traded)")
-    if spikes:
-        issues.append(f"{spikes} suspicious spike(s)")
-    if age_hours > 2 * timeframe_seconds / 3600 + 1:
+    if bad_prints or bad_wicks:
+        issues.append(f"{bad_prints} bad price(s), {bad_wicks} bad wick(s): fixed automatically on load")
+    if age_hours > DELISTED_AFTER_DAYS * 24:
+        issues.append(f"no new data since {ts.iloc[-1]:%Y-%m-%d} (delisted?)")
+    elif age_hours > 2 * timeframe_seconds / 3600 + 1:
         issues.append(f"last bar {age_hours:.0f}h old (run data update)")
     if issues and status == "ok":
         status = "warn"
@@ -77,5 +85,5 @@ def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> d
 def quality_report(store, timeframe: str, timeframe_seconds: int, symbols=None, now: float = None) -> pd.DataFrame:
     rows = []
     for sym in symbols or store.symbols(timeframe):
-        rows.append({"symbol": sym, **check_bars(store.load(sym, timeframe), timeframe_seconds, now)})
+        rows.append({"symbol": sym, **check_bars(store.load(sym, timeframe, clean=False), timeframe_seconds, now)})
     return pd.DataFrame(rows)
