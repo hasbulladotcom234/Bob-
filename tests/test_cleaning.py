@@ -140,3 +140,27 @@ def test_backtest_closes_position_before_a_data_hole():
     assert first["reason"] == "data_hole"
     assert first["exit_time"] == before["timestamp"].iloc[-1]
     assert first["exit_price"] < 40          # no fake 8x gain from jumping across the hole
+
+
+def test_market_confirmation_must_be_in_proportion():
+    """PEPE 2025-12-18 pattern: a +150% wick is not explained by a 3% Bitcoin wick."""
+    coin = realistic_bars(n=3000, seed=11, start=0.0000037)
+    btc = realistic_bars(n=3000, seed=12, start=90000.0)
+    coin.loc[1500, "high"] = coin.loc[1500, ["open", "close"]].max() * 2.5
+    btc.loc[1500, "high"] = btc.loc[1500, ["open", "close"]].max() * 1.03
+    out, rep = clean_bars(coin, reference=btc)
+    assert out.loc[out["timestamp"] == coin.at[1500, "timestamp"], "high"].iloc[0] < coin.at[1500, "high"] / 2
+    assert rep["kept_by_market"] == 0
+
+
+def test_crash_confirmed_by_a_straight_market_drop():
+    """SOL 2021-09-07 pattern: the coin dips 17% and bounces, Bitcoin falls 9% and stays down."""
+    coin = realistic_bars(n=3000, seed=13, start=180.0)
+    btc = realistic_bars(n=3000, seed=14, start=52000.0)
+    _crash(coin, 1500, 0.17, 1)
+    btc.loc[1500:, ["open", "high", "low", "close"]] *= 0.91
+    btc.loc[1500, "open"] = btc.loc[1499, "close"]
+    btc.loc[1500, "high"] = btc.loc[1500, "open"]
+    out, rep = clean_bars(coin, reference=btc)
+    assert coin.at[1500, "timestamp"] in set(out["timestamp"])
+    assert rep["kept_by_market"] >= 1

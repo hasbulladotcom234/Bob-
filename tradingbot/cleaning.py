@@ -12,8 +12,10 @@ but the same move on a quiet day is.
 A real crash can also snap back (19 May 2021: crypto fell ~30% within hours
 and partly recovered). Deleting those would hide real losses and make every
 strategy look safer than it was. So a suspect is checked against the market
-(Bitcoin; Ether when cleaning Bitcoin): if the market made a similar move
-in the same hour, it's real and is kept. A bad print is specific to one coin.
+(Bitcoin; Ether when cleaning Bitcoin): if the market moved the same way in
+the same hour, by at least a quarter as much as the coin and at least 3%,
+it's real and is kept. A bad print is specific to one coin; a 150% spike in
+one coin isn't explained by a 3% wobble in Bitcoin.
 
 Three kinds are handled:
 - bad close: the whole bar is wrong -> the bar is dropped (treated as missing)
@@ -40,8 +42,8 @@ MIN_MOVE = 0.10       # ...and never less than 10%, to count as a bad print
 NEIGHBOURS = 3        # bars on each side used as the reference level
 VOL_WINDOW = 720      # bars used to measure how volatile the coin is right now (30 days of 1h bars)
 LONG_GAP_BARS = 24    # a hole this long splits the data into separately cleaned stretches
-CONFIRM_SHARE = 0.25  # the market moving at least this share of the coin's move...
-CONFIRM_MIN = 0.03    # ...or at least 3%, in the same direction and hour, means the move was real
+CONFIRM_SHARE = 0.25  # the market must move at least this share of the coin's move...
+CONFIRM_MIN = 0.03    # ...and at least 3%, in the same direction and hour, for the move to count as real
 
 
 def local_volatility(log_close: pd.Series) -> pd.Series:
@@ -79,24 +81,28 @@ def segment_ids(timestamps: pd.Series) -> pd.Series:
 
 
 def market_moves(reference: pd.DataFrame) -> pd.DataFrame:
-    """For the market proxy: how much each hour's close sticks out (up/down)
-    and how long its wicks are, indexed by timestamp. Used to confirm that a
-    coin's sudden move was a real market event."""
+    """For the market proxy: the biggest move up and down in each hour,
+    indexed by timestamp. A move counts however it showed up: a spike that
+    snapped back, a long wick, or a straight drop/rise from the last close.
+    Used to confirm that a coin's sudden move was a real market event."""
     ref = reference.sort_values("timestamp").reset_index(drop=True)
     parts = []
     for _, seg in ref.groupby(segment_ids(ref["timestamp"])):
         c = np.log(seg["close"])
-        up, down, _, _ = _spike_sizes(c)
-        body_hi = np.log(np.maximum(seg["open"], seg["close"]))
-        body_lo = np.log(np.minimum(seg["open"], seg["close"]))
-        parts.append(pd.DataFrame({"up": up, "down": down,
-                                   "wick_up": np.log(seg["high"]) - body_hi,
-                                   "wick_down": body_lo - np.log(seg["low"])}).set_index(seg["timestamp"]))
-    return pd.concat(parts) if parts else pd.DataFrame(columns=["up", "down", "wick_up", "wick_down"])
+        spike_up, spike_down, _, _ = _spike_sizes(c)
+        step = c.diff()
+        wick_up = np.log(seg["high"]) - np.log(np.maximum(seg["open"], seg["close"]))
+        wick_down = np.log(np.minimum(seg["open"], seg["close"])) - np.log(seg["low"])
+        parts.append(pd.DataFrame({
+            "up": pd.concat([spike_up, wick_up, step], axis=1).max(axis=1),
+            "down": pd.concat([spike_down, wick_down, -step], axis=1).max(axis=1),
+        }).set_index(seg["timestamp"]))
+    return pd.concat(parts) if parts else pd.DataFrame(columns=["up", "down"])
 
 
 def _confirmed(coin_size: pd.Series, market_size: pd.Series) -> pd.Series:
-    return (market_size >= np.minimum(CONFIRM_SHARE * coin_size, CONFIRM_MIN)).fillna(False)
+    """The market moved the same way in the same hour, in proportion to the coin."""
+    return (market_size >= np.maximum(CONFIRM_SHARE * coin_size, CONFIRM_MIN)).fillna(False)
 
 
 def _clean_segment(df: pd.DataFrame, market: pd.DataFrame, changes: list, kept: list) -> pd.DataFrame:
@@ -151,8 +157,8 @@ def _clean_segment(df: pd.DataFrame, market: pd.DataFrame, changes: list, kept: 
     wick_down = np.log(near_lo / l)
     threshold = np.maximum(Z * local_volatility(np.log(c)), MIN_MOVE)
     suspect_hi, suspect_lo = (wick_up > threshold).fillna(False), (wick_down > threshold).fillna(False)
-    real_hi = suspect_hi & _confirmed(wick_up, mkt["wick_up"]) if mkt is not None else suspect_hi & False
-    real_lo = suspect_lo & _confirmed(wick_down, mkt["wick_down"]) if mkt is not None else suspect_lo & False
+    real_hi = suspect_hi & _confirmed(wick_up, mkt["up"]) if mkt is not None else suspect_hi & False
+    real_lo = suspect_lo & _confirmed(wick_down, mkt["down"]) if mkt is not None else suspect_lo & False
     bad_hi, bad_lo = suspect_hi & ~real_hi, suspect_lo & ~real_lo
     for i in np.flatnonzero(real_hi):
         kept.append({"timestamp": out.at[i, "timestamp"], "kind": "high", "price": h[i],
