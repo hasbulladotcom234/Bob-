@@ -81,6 +81,30 @@ last price (zero volume). Longer holes are data outages and stay empty, so
 no return is computed across them, and coins that stopped trading
 (delisted) stay empty after their last bar instead of looking flat.
 
+## Research: testing an idea across all coins
+
+Write an idea as a small function in `my_signals.py` (each coin gets a score
+every day), then:
+
+```bash
+python main.py research --list          # your ideas
+python main.py research momentum_7d     # test one
+```
+
+The report answers: does a higher score come before higher returns
+(information coefficient, with a t-stat), what would holding the top third
+of coins have made after fees, could the result be luck (a placebo test that
+gives each coin another coin's scores 200 times), and does it hold every
+year and for most coins. Every run is recorded in `research_runs.csv`,
+because the more ideas you try, the more likely one looks good by chance.
+
+**Locked holdout:** research never sees data from `HOLDOUT_START`
+(default 2025-10-01) onwards. Your final idea gets tested on it once, at the
+end. If it still works on data you never looked at, it's probably real.
+
+Lessons with commented code are in `learn/` (run e.g.
+`python learn/02_information_coefficient.py`).
+
 ## How the project is split
 
 - **`my_strategy.py` is yours.** It holds the trading idea: which
@@ -192,6 +216,8 @@ Tune these in `tradingbot/config.py` (`RiskParams`).
 
 ```
 my_strategy.py   # YOUR strategy: indicators, buy/sell rules, parameters
+my_signals.py    # YOUR research ideas: one scoring function per idea
+learn/           # lessons: commented scripts that rebuild key numbers by hand
 main.py          # command line: setup / status / run / data / explore / backtest / optimize
 tradingbot/
   config.py      # settings, env vars, risk limits, live-trading safety gate
@@ -208,6 +234,7 @@ tradingbot/
   backtester.py  # bar-by-bar backtest with next-open fills
   optimizer.py   # grid search over PARAM_GRID with a train/test split
   explore.py     # statistical report for one coin
+  research.py    # signal research: IC, score-group portfolios, placebo luck check
   brokers.py     # PaperBroker (simulated) and ExchangeBroker (ccxt orders, sandbox or live)
   bot.py         # live loop, saved state, trade journal
   setup_wizard.py# paper-account setup

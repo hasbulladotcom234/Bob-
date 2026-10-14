@@ -36,6 +36,10 @@ class Config:
     poll_interval_seconds: int = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
     strategy_module: str = os.getenv("STRATEGY", "my_strategy")
     history_bars: int = int(os.getenv("HISTORY_BARS", "5000"))  # bars used by backtest/optimize
+    # Research never sees data from this date on. It's tested once, at the very end, on your final
+    # idea: if it still works on data you've never looked at, it's probably real.
+    holdout_start: str = os.getenv("HOLDOUT_START", "2025-10-01")
+    research_log: str = os.getenv("RESEARCH_LOG_FILE", "research_runs.csv")
 
     # The bot remembers its position here across restarts, and logs every trade.
     state_file: str = os.getenv("STATE_FILE", "state.json")

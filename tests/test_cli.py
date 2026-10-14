@@ -1,9 +1,12 @@
 """End-to-end: the real CLI commands against a fake Alpaca, in a temp folder."""
+import os
+
 import pandas as pd
 
 import main
 from tests.fakes import FakeAlpacaData, make_bars
 
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 T0 = int(pd.Timestamp("2024-01-01").timestamp() * 1000)
 
 
@@ -63,3 +66,26 @@ def _config(symbol):
     c = Config()
     c.exchange_id, c.symbol, c.timeframe = "alpaca", symbol, "1h"
     return c
+
+
+def test_research_command_end_to_end(tmp_path, monkeypatch, capsys):
+    import shutil
+    from tests.test_cleaning import realistic_bars
+    from tradingbot.store import BarStore
+    monkeypatch.chdir(tmp_path)
+    shutil.copy(os.path.join(REPO, "my_signals.py"), tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    store = BarStore(use_parquet=False)
+    for i in range(8):
+        store.save(f"C{i}/USD", "1h", realistic_bars(n=24 * 300, seed=i, start=100.0))
+    monkeypatch.setenv("HOLDOUT_START", "2024-09-01")
+    from tradingbot import config as cfg
+    monkeypatch.setattr(main, "Config", lambda: cfg.Config(holdout_start="2024-09-01"))
+
+    run(["research", "--list"])
+    assert "momentum_7d" in capsys.readouterr().out
+    run(["research", "momentum_7d", "--placebo", "20"])
+    out = capsys.readouterr().out
+    assert "Information coefficient" in out and "top_minus_market" in out and "Research run #1" in out
+    run(["research", "reversal_1d", "--placebo", "0"])
+    assert "Research run #2 (2 different ideas" in capsys.readouterr().out

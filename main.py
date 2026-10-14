@@ -9,6 +9,9 @@
     python main.py data benchmarks    how every coin and the basket performed
     python main.py data inspect PEPE/USD   holes, bad prices and biggest moves for one coin
 
+    python main.py research --list    list the ideas in my_signals.py
+    python main.py research NAME      test an idea from my_signals.py across all coins
+
     python main.py explore            statistical facts about one coin
     python main.py backtest           test my_strategy.py on history
     python main.py optimize           tune my_strategy.py's PARAM_GRID with a train/test split
@@ -170,6 +173,70 @@ def cmd_data_inspect(args):
 
 # ---- research --------------------------------------------------------------
 
+def _load_signals():
+    import importlib
+    import inspect as _inspect
+    module = importlib.import_module("my_signals")
+    return {name: fn for name, fn in _inspect.getmembers(module, _inspect.isfunction)
+            if fn.__module__ == module.__name__ and not name.startswith("_")}
+
+
+def cmd_research(args):
+    import csv
+    import os
+    from datetime import datetime, timezone
+
+    from tradingbot.research import format_report, load_research_data, run_research
+    from tradingbot.store import BarStore
+
+    signals = _load_signals()
+    if args.list or not args.signal:
+        print("Ideas in my_signals.py:\n")
+        for name, fn in signals.items():
+            print(f"  {name:20} {(fn.__doc__ or '').strip().splitlines()[0] if fn.__doc__ else ''}")
+        print("\nTest one with:  python main.py research NAME")
+        return
+    if args.signal not in signals:
+        sys.exit(f"No signal called {args.signal!r} in my_signals.py. Available: {', '.join(signals)}")
+
+    config = Config()
+    store = BarStore(exchange_id=config.exchange_id)
+    symbols = store.symbols(config.timeframe)
+    if not symbols:
+        sys.exit("No stored data yet. Run: python main.py data update")
+    print(f"Loading {len(symbols)} coins (cleaned, {args.freq} bars, before {config.holdout_start})...\n")
+    data = load_research_data(store, symbols, config.timeframe, freq=args.freq, start=args.start,
+                              end_before=config.holdout_start)
+    horizons = tuple(int(h) for h in args.horizons.split(","))
+    result = run_research(signals[args.signal], data, horizons=horizons, rebalance=args.rebalance,
+                          groups=args.groups, fee=config.risk.taker_fee_pct, placebo_runs=args.placebo)
+    print(format_report(result, config.holdout_start))
+
+    # record every run: the more ideas tried, the likelier one looks good by luck (used in Phase 3)
+    main_row = result.ic_by_horizon.loc[args.rebalance] if args.rebalance in result.ic_by_horizon.index else None
+    stats = result.groups.stats
+    row = {"time": datetime.now(timezone.utc).isoformat(timespec="seconds"), "signal": args.signal,
+           "freq": args.freq, "start": f"{result.start:%Y-%m-%d}", "end": f"{result.end:%Y-%m-%d}",
+           "rebalance_days": args.rebalance,
+           "mean_ic": "" if main_row is None else f"{main_row['mean_ic']:.4f}",
+           "t_stat": "" if main_row is None else f"{main_row['t_stat']:.2f}",
+           "top_vs_market_sharpe": f"{stats.loc['top_minus_market', 'sharpe']:.2f}",
+           "luck_share": "" if not result.placebo else f"{result.placebo['share_as_good']:.2f}",
+           "uses_future": result.uses_future}
+    new = not os.path.exists(config.research_log)
+    with open(config.research_log, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(row))
+        if new:
+            w.writeheader()
+        w.writerow(row)
+    with open(config.research_log) as f:
+        runs = list(csv.DictReader(f))
+    distinct = len({r["signal"] for r in runs})
+    print(f"\nResearch run #{len(runs)} ({distinct} different ideas tried so far, saved in {config.research_log}).")
+    print("The more ideas you try, the more likely one looks good by pure luck. Phase 3 corrects for this.")
+
+
+
 def cmd_explore(args):
     from tradingbot.explore import report
     print(report(load_history(Config())))
@@ -219,6 +286,17 @@ def build_parser():
                             ("backtest", cmd_backtest, "backtest my_strategy.py"),
                             ("optimize", cmd_optimize, "tune my_strategy.py")]:
         sub.add_parser(name, help=help_).set_defaults(fn=fn)
+
+    rs = sub.add_parser("research", help="test an idea from my_signals.py across all coins")
+    rs.add_argument("signal", nargs="?", help="name of a function in my_signals.py")
+    rs.add_argument("--list", action="store_true", help="list the ideas in my_signals.py")
+    rs.add_argument("--freq", default="1D", help="bar size for research: 1D (default), 4h, ...")
+    rs.add_argument("--rebalance", type=int, default=7, help="re-sort the portfolios every N bars (default 7)")
+    rs.add_argument("--horizons", default="1,3,7,14,30", help="how many bars ahead to check the IC")
+    rs.add_argument("--groups", type=int, default=3, help="number of score groups (default 3: thirds)")
+    rs.add_argument("--start", help="ignore data before this date")
+    rs.add_argument("--placebo", type=int, default=200, help="scrambled runs for the luck check (0 = skip)")
+    rs.set_defaults(fn=cmd_research)
 
     data = sub.add_parser("data", help="download and inspect market data").add_subparsers(dest="data_cmd", required=True)
     up = data.add_parser("update", help="download / update history")

@@ -30,12 +30,14 @@ Nothing downstream is better than its data.
   long holes and delisted coins never bridged
 - Benchmark series (e.g. BTC buy & hold, equal-weight basket)
 
-## Phase 2: Research framework
+## Phase 2: Research framework (tool built; your research starts)
 Where most of a quant's time goes.
 - Compute any signal for every asset at once (vectorised)
 - Predictive-power report for a signal: information coefficient (rank
   correlation with future returns), how fast it decays across horizons,
   turnover, and whether it holds across assets and over time
+- Placebo luck check (scores shuffled between coins) and a record of every run
+- Locked holdout: research never sees the last 12 months
 - Research notebooks wired to the local data
 - You: first real signals, each with a hypothesis written down first
 
