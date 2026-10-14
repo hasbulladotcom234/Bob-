@@ -9,3 +9,4 @@ trades.csv
 backtest_trades.csv
 backtest_equity.csv
 data/
+.version

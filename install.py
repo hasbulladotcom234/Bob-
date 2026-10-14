@@ -80,14 +80,21 @@ def main():
             fail("Couldn't install ccxt (see above). Paste this output to get help.", output)
 
         deps = ccxt_dependencies()
-        skipped = []
+        substituted, skipped = [], []
         if not pip_install(*deps)[0]:
             for dep in deps:
-                if not pip_install(dep)[0]:
+                if pip_install(dep)[0]:
+                    continue
+                # The exact version ccxt asks for has no ready-made build here; the newest
+                # version that does is usually fine (the final check below confirms it).
+                if pip_install(package_name(dep))[0]:
+                    substituted.append(dep)
+                else:
                     skipped.append(dep)
+        if substituted:
+            print("Used the newest version available for this computer instead of: " + ", ".join(substituted))
         if skipped:
-            print("Skipped (no version for this computer; only used as optional speed-ups): "
-                  + ", ".join(skipped))
+            print("Skipped (no version at all for this computer): " + ", ".join(skipped))
 
     for pkg, consequence in OPTIONAL.items():
         if not pip_install(pkg)[0]:

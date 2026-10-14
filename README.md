@@ -30,6 +30,10 @@ To install by hand instead, open a terminal in the project folder and run
 a compiler: on computers where an add-on has no ready-made version (e.g.
 Windows on ARM laptops) it skips optional pieces and checks everything works.
 
+**Getting the latest version:** run `python update.py` in the project folder.
+It downloads the newest code from GitHub into the same folder and leaves your
+data, settings, keys and the bot's saved state alone.
+
 Other commands (run in a terminal in the project folder):
 
 ```bash
