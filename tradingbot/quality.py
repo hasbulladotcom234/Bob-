@@ -15,7 +15,7 @@ LONG_GAP_BARS = 24        # holes longer than this are data outages, not quiet t
 DELISTED_AFTER_DAYS = 7   # no new bars for this long: probably delisted or halted
 
 
-def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> dict:
+def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None, reference: pd.DataFrame = None) -> dict:
     """Quality metrics for one symbol's candles (sorted, bar start timestamps)."""
     now = time.time() if now is None else now
     if df.empty:
@@ -33,7 +33,7 @@ def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> d
     nonpositive = int((prices <= 0).any(axis=1).sum())
     blank = int(prices.isna().any(axis=1).sum())
 
-    _, cleaning = clean_bars(df) if not (ohlc_bad or nonpositive or blank) else (None, {})
+    _, cleaning = clean_bars(df, reference) if not (ohlc_bad or nonpositive or blank) else (None, {})
     bad_prints = cleaning.get("bad_closes", 0) + cleaning.get("bad_opens", 0)
     bad_wicks = cleaning.get("bad_wicks", 0)
 
@@ -56,6 +56,7 @@ def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> d
         "blank_prices": blank,
         "bad_prints": bad_prints,
         "bad_wicks": bad_wicks,
+        "kept_by_market": cleaning.get("kept_by_market", 0),
         "longest_flat_bars": longest_flat,
         "zero_volume_pct": 100 * (df["volume"] <= 0).mean(),
         "hours_since_last_bar": age_hours,
@@ -85,5 +86,6 @@ def check_bars(df: pd.DataFrame, timeframe_seconds: int, now: float = None) -> d
 def quality_report(store, timeframe: str, timeframe_seconds: int, symbols=None, now: float = None) -> pd.DataFrame:
     rows = []
     for sym in symbols or store.symbols(timeframe):
-        rows.append({"symbol": sym, **check_bars(store.load(sym, timeframe, clean=False), timeframe_seconds, now)})
+        raw = store.load(sym, timeframe, clean=False)
+        rows.append({"symbol": sym, **check_bars(raw, timeframe_seconds, now, store.reference(sym, timeframe))})
     return pd.DataFrame(rows)

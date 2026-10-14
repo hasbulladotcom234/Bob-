@@ -23,6 +23,8 @@ from .data import COLUMNS, closed_bars, fetch_range
 DEFAULT_ROOT = os.getenv("DATA_DIR", "data")
 DEFAULT_SINCE = os.getenv("DATA_SINCE", "2021-01-01")
 REFETCH_BARS = 3  # re-download the last few stored bars in case the exchange revised them
+MARKET = "BTC/USD"          # market proxy used to confirm real market-wide moves when cleaning
+MARKET_FOR_MARKET = "ETH/USD"  # ...and the one used when cleaning the proxy itself
 FORMATS = (".parquet", ".csv")
 
 
@@ -48,6 +50,16 @@ class BarStore:
         self.root = root
         self.exchange_id = exchange_id
         self.use_parquet = parquet_available() if use_parquet is None else use_parquet
+        self._reference_cache = {}
+
+    def reference(self, symbol: str, timeframe: str):
+        """Raw candles of the market proxy used to clean `symbol` (None if not stored)."""
+        ref_symbol = MARKET_FOR_MARKET if symbol == MARKET else MARKET
+        key = (ref_symbol, timeframe)
+        if key not in self._reference_cache:
+            ref = self.load(ref_symbol, timeframe, clean=False)
+            self._reference_cache[key] = None if ref.empty else ref
+        return self._reference_cache[key]
 
     def path(self, symbol: str, timeframe: str, ext: str = None) -> str:
         ext = ext or (".parquet" if self.use_parquet else ".csv")
@@ -88,7 +100,7 @@ class BarStore:
             df = pd.read_csv(path, parse_dates=["timestamp"], float_precision="round_trip")
             df[COLUMNS[1:]] = df[COLUMNS[1:]].astype(float)
         if clean:
-            df = clean_bars(df)[0]
+            df = clean_bars(df, self.reference(symbol, timeframe))[0]
         if start is not None:
             df = df[df["timestamp"] >= pd.Timestamp(start)]
         if end is not None:

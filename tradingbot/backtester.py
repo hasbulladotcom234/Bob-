@@ -2,6 +2,8 @@
 strategy exactly the way the live bot would.
 
 Timing rules (the main defence against fooling yourself):
+- A data hole (a day or more with no bars) closes any open position at the
+  last price before it; nothing is carried across the hole.
 - decide() sees a bar only after it has closed.
 - Orders fill at the NEXT bar's open, plus slippage and fees.
 - Stop-loss / take-profit are checked against each bar's low/high. If a bar
@@ -14,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .config import Config
+from .cleaning import LONG_GAP_BARS
 from .metrics import periods_per_year
 from .risk import RiskManager
 from .strategy import Bars, decide, load_strategy, lookahead_columns, with_indicators
@@ -64,8 +67,20 @@ def run_backtest(df: pd.DataFrame, config: Config, strat=None, params: dict = No
                        "return_pct": (proceeds / cost - 1) * 100, "reason": reason})
         qty, entry, stop, take = 0.0, None, None, None
 
+    step = data["timestamp"].diff().median()
+    after_hole = (data["timestamp"].diff() > LONG_GAP_BARS * step).tolist()
+
     for i, row in enumerate(bars.rows):
         when = row.timestamp
+
+        # 0. a data hole: we can't know what happened during it, so the position
+        #    is closed at the last known price and nothing carries over
+        if after_hole[i]:
+            prev = bars.rows[i - 1]
+            if qty > 0:
+                close_position(prev.close, prev.timestamp, "data_hole")
+                equity_curve[-1] = cash
+            pending = "hold"
 
         # 1. at the open: execute what was decided at the last close
         if pending == "sell" and qty > 0:

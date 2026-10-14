@@ -103,7 +103,8 @@ def cmd_data_check(args):
     report = quality_report(store, timeframe, tf_seconds)
     if report.empty:
         sys.exit("No stored data yet. Run: python main.py data update")
-    cols = ["symbol", "status", "rows", "first", "last", "coverage_pct", "bad_prints", "bad_wicks", "issues"]
+    cols = ["symbol", "status", "rows", "first", "last", "coverage_pct", "bad_prints", "bad_wicks",
+            "kept_by_market", "issues"]
     with pd.option_context("display.width", 200, "display.max_colwidth", 60):
         print(report[cols].to_string(index=False, float_format=lambda x: f"{x:.1f}"))
     print("\nstatus: ok = clean | warn = usable, read the issue | bad = corrupt bars, don't trust it")
@@ -130,16 +131,17 @@ def cmd_data_benchmarks(args):
 
 
 def cmd_data_inspect(args):
-    from tradingbot.cleaning import clean_bars, gaps
+    from tradingbot.cleaning import clean_bars, gaps, segment_ids
     from tradingbot.data import make_exchange
     from tradingbot.store import BarStore
     config = Config()
     timeframe = args.timeframe or config.timeframe
-    raw = BarStore(exchange_id=config.exchange_id).load(args.symbol, timeframe, clean=False)
+    store = BarStore(exchange_id=config.exchange_id)
+    raw = store.load(args.symbol, timeframe, clean=False)
     if raw.empty:
         sys.exit(f"No stored data for {args.symbol} {timeframe}.")
     tf_seconds = make_exchange(config.exchange_id).parse_timeframe(timeframe)
-    clean, rep = clean_bars(raw)
+    clean, rep = clean_bars(raw, store.reference(args.symbol, timeframe))
     fmt = lambda x: f"{x:.6g}"
     with pd.option_context("display.width", 200, "display.max_rows", 200):
         print(f"{args.symbol} {timeframe}: {len(raw)} bars, {raw['timestamp'].iloc[0]} -> {raw['timestamp'].iloc[-1]}\n")
@@ -147,13 +149,20 @@ def cmd_data_inspect(args):
         print(f"== Data holes of a day or more: {len(g)}")
         if len(g):
             print(g.to_string(index=False, float_format=fmt))
+
         print(f"\n== Fixed by cleaning: {rep['bad_closes']} bad closes, {rep['bad_opens']} bad opens, "
-              f"{rep['bad_wicks']} bad wicks")
+              f"{rep['bad_wicks']} bad wicks. Largest first:")
         if len(rep["changes"]):
             print(rep["changes"].head(args.limit).to_string(index=False, float_format=fmt))
             if len(rep["changes"]) > args.limit:
                 print(f"... and {len(rep['changes']) - args.limit} more")
-        moves = clean.assign(move_pct=100 * clean["close"].pct_change()).dropna()
+
+        print(f"\n== Sudden moves KEPT because the market moved too (real events): {rep['kept_by_market']}")
+        if len(rep["kept"]):
+            print(rep["kept"].head(args.limit).to_string(index=False, float_format=fmt))
+
+        moves = clean.assign(move_pct=100 * clean.groupby(segment_ids(clean["timestamp"]))["close"].pct_change())
+        moves = moves.dropna(subset=["move_pct"])
         top = moves.reindex(moves["move_pct"].abs().sort_values(ascending=False).index).head(10)
         print("\n== Biggest one-bar moves left after cleaning (should look like real market moves):")
         print(top[["timestamp", "open", "high", "low", "close", "move_pct"]].to_string(index=False, float_format=fmt))

@@ -60,10 +60,13 @@ python main.py data inspect PEPE/USD        # one coin: data holes, bad prices f
 
 The raw downloaded data is never modified. When it's loaded, bad prices
 ("bad prints": a price far from both the bars before and after it, which
-snaps straight back) are removed, and stray highs/lows are clipped, so they
-can't create fake returns or trigger fake stop-losses. Real big moves stay,
-because the price after them stays at the new level. Rules and thresholds
-are in `tradingbot/cleaning.py`.
+snaps straight back) are removed, and stray highs/lows are cut back to the
+bar's open/close range, so they can't create fake returns or trigger fake
+stop-losses. Real big moves stay: either the price stays at the new level,
+or Bitcoin made a similar move in the same hour (a real market-wide crash,
+like 19 May 2021). Stretches separated by data holes are cleaned
+separately, and backtests close any position before a hole. Rules and
+thresholds are in `tradingbot/cleaning.py`.
 
 Files are Parquet if `pyarrow` is installed (`pip install pyarrow`: smaller
 and faster), otherwise plain CSV. Both work the same way.
