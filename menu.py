@@ -86,7 +86,9 @@ MENU = [
     ("Download new price data", lambda i: run(["main.py", "data", "update"], i)),
     ("Check data quality", lambda i: run(["main.py", "data", "check"], i)),
     ("How every coin performed (benchmarks)", lambda i: run(["main.py", "data", "benchmarks"], i)),
-    ("Research: test one of my ideas", None),
+    ("SEE the data: charts of every coin (opens your browser)", lambda i: run(["main.py", "view", "data"], i)),
+    ("SEE one coin: prices and every cleaning decision", None),
+    ("Research: test one of my ideas (results + charts)", None),
     ("Run a lesson", None),
     ("Paper trading: check status (never trades)", lambda i: run(["main.py", "status"], i)),
     ("Paper trading: connect my Alpaca paper account", lambda i: run(["main.py", "setup"], i)),
@@ -102,6 +104,17 @@ def research(input_fn):
     name = choose("Which idea? (they live in my_signals.py)", names, input_fn)
     if name:
         run(["main.py", "research", name], input_fn)
+
+
+def coin_chart(input_fn):
+    folder = os.path.join(HERE, "data", "alpaca", "1h")
+    coins = sorted({os.path.splitext(f)[0].replace("-", "/") for f in os.listdir(folder)}) if os.path.isdir(folder) else []
+    if not coins:
+        print("No price data yet: choose 'Download new price data' first.")
+        return
+    coin = choose("Which coin?", coins, input_fn)
+    if coin:
+        run(["main.py", "view", "coin", coin], input_fn)
 
 
 def lesson(input_fn):
@@ -129,6 +142,8 @@ def main(input_fn=input):
         label, action = MENU[int(pick) - 1]
         if label.startswith("Research"):
             research(input_fn)
+        elif label.startswith("SEE one coin"):
+            coin_chart(input_fn)
         elif label.startswith("Run a lesson"):
             lesson(input_fn)
         else:

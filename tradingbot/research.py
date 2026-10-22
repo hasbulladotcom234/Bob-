@@ -191,9 +191,22 @@ def placebo_test(signal: pd.DataFrame, close: pd.DataFrame, groups: int = 3, reb
         shuffled.columns = list(rng.permutation(cols))
         fake.append(spread(shuffled[cols].where(close.notna())))
     fake = np.array(fake)
-    return {"actual_pct": 100 * actual, "placebo_p5_pct": 100 * np.percentile(fake, 5),
+    return {"actual_pct": 100 * actual, "runs": list(100 * fake), "placebo_p5_pct": 100 * np.percentile(fake, 5),
             "placebo_p95_pct": 100 * np.percentile(fake, 95),
             "share_as_good": float((fake >= actual).mean()) if actual >= 0 else float((fake <= actual).mean())}
+
+
+def score_buckets(signal: pd.DataFrame, close: pd.DataFrame, buckets: int = 5, horizon: int = 1) -> pd.DataFrame:
+    """Each day, split the coins into `buckets` by score and measure how each
+    bucket did over the next `horizon` days compared with that day's average
+    coin (so market-wide moves cancel out). Averaged over all days."""
+    fwd = forward_returns(close, horizon)
+    excess = fwd.sub(fwd.mean(axis=1), axis=0)
+    bucket = group_assignments(signal, buckets)
+    both = pd.DataFrame({"bucket": bucket.stack(), "excess": excess.stack()}).dropna()
+    g = both.groupby("bucket")["excess"]
+    return pd.DataFrame({"avg_excess_pct": 100 * g.mean(), "se_pct": 100 * g.std() / np.sqrt(g.count()),
+                         "observations": g.count()})
 
 
 def lookahead_check(signal_fn, data: types.SimpleNamespace, cut: float = 0.6) -> bool:
@@ -226,6 +239,9 @@ class ResearchResult:
     groups: GroupBacktest
     rebalance: int
     placebo: dict = None
+    ic_series: pd.Series = None     # daily IC at the rebalance horizon
+    buckets: pd.DataFrame = None    # next-day return vs the average coin, by score bucket
+    signal: pd.DataFrame = None     # the scores themselves
 
 
 def per_coin_ic(signal: pd.DataFrame, fwd: pd.DataFrame) -> pd.DataFrame:
@@ -271,6 +287,7 @@ def run_research(signal_fn, data: types.SimpleNamespace, horizons=(1, 3, 7, 14, 
         ic_by_coin=per_coin_ic(signal, forward_returns(data.close, rebalance)),
         groups=gb, rebalance=rebalance,
         placebo=placebo_test(signal, data.close, groups, rebalance, placebo_runs) if placebo_runs else None,
+        ic_series=main_ic, buckets=score_buckets(signal, data.close), signal=signal,
     )
 
 

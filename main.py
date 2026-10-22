@@ -9,6 +9,8 @@
     python main.py data benchmarks    how every coin and the basket performed
     python main.py data inspect PEPE/USD   holes, bad prices and biggest moves for one coin
 
+    python main.py view data          charts of every coin, in your browser
+    python main.py view coin PEPE/USD one coin's prices with every cleaning decision marked
     python main.py research --list    list the ideas in my_signals.py
     python main.py research NAME      test an idea from my_signals.py across all coins
 
@@ -18,6 +20,7 @@
 """
 import argparse
 import logging
+import os
 import sys
 
 import pandas as pd
@@ -181,6 +184,40 @@ def _load_signals():
             if fn.__module__ == module.__name__ and not name.startswith("_")}
 
 
+def cmd_view(args):
+    from tradingbot.charts import coin_page, data_page, open_in_browser
+    from tradingbot.cleaning import clean_bars
+    from tradingbot.data import make_exchange
+    from tradingbot.quality import quality_report
+    from tradingbot.research import load_research_data
+    from tradingbot.store import BarStore
+
+    config = Config()
+    store = BarStore(exchange_id=config.exchange_id)
+    symbols = store.symbols(config.timeframe)
+    if not symbols:
+        sys.exit("No stored data yet. Run: python main.py data update")
+    cutoff = pd.Timestamp(config.holdout_start)
+    if args.what == "data":
+        print("Building charts for every coin...")
+        close = load_research_data(store, symbols, config.timeframe, end_before=cutoff).close
+        tf_seconds = make_exchange(config.exchange_id).parse_timeframe(config.timeframe)
+        page = data_page(close, quality_report(store, config.timeframe, tf_seconds), config.holdout_start)
+    else:
+        if not args.symbol:
+            sys.exit("Which coin? e.g.  python main.py view coin PEPE/USD")
+        raw = store.load(args.symbol, config.timeframe, clean=False)
+        if raw.empty:
+            sys.exit(f"No stored data for {args.symbol}. Stored: {', '.join(symbols)}")
+        raw = raw[raw["timestamp"] < cutoff].reset_index(drop=True)
+        ref = store.reference(args.symbol, config.timeframe)
+        clean, report = clean_bars(raw, None if ref is None else ref[ref["timestamp"] < cutoff])
+        page = coin_page(args.symbol, raw, clean, report, config.holdout_start)
+    print(f"Charts: {os.path.abspath(page)}")
+    if not args.no_open:
+        open_in_browser(page)
+
+
 def cmd_research(args):
     import csv
     import os
@@ -211,6 +248,12 @@ def cmd_research(args):
     result = run_research(signals[args.signal], data, horizons=horizons, rebalance=args.rebalance,
                           groups=args.groups, fee=config.risk.taker_fee_pct, placebo_runs=args.placebo)
     print(format_report(result, config.holdout_start))
+
+    from tradingbot.charts import open_in_browser, research_page
+    page = research_page(result, result.signal, config.holdout_start)
+    print(f"\nCharts: {os.path.abspath(page)}")
+    if not args.no_open:
+        open_in_browser(page)
 
     # record every run: the more ideas tried, the likelier one looks good by luck (used in Phase 3)
     main_row = result.ic_by_horizon.loc[args.rebalance] if args.rebalance in result.ic_by_horizon.index else None
@@ -296,6 +339,13 @@ def build_parser():
     rs.add_argument("--groups", type=int, default=3, help="number of score groups (default 3: thirds)")
     rs.add_argument("--start", help="ignore data before this date")
     rs.add_argument("--placebo", type=int, default=200, help="scrambled runs for the luck check (0 = skip)")
+    rs.add_argument("--no-open", action="store_true", help="don't open the charts in the browser")
+
+    vw = sub.add_parser("view", help="interactive charts in your browser")
+    vw.add_argument("what", choices=["data", "coin"], help="data = every coin; coin = one coin's cleaning decisions")
+    vw.add_argument("symbol", nargs="?", help="for 'coin': e.g. PEPE/USD")
+    vw.add_argument("--no-open", action="store_true", help="just write the page")
+    vw.set_defaults(fn=cmd_view)
     rs.set_defaults(fn=cmd_research)
 
     data = sub.add_parser("data", help="download and inspect market data").add_subparsers(dest="data_cmd", required=True)

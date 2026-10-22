@@ -84,8 +84,17 @@ def test_research_command_end_to_end(tmp_path, monkeypatch, capsys):
 
     run(["research", "--list"])
     assert "momentum_7d" in capsys.readouterr().out
-    run(["research", "momentum_7d", "--placebo", "20"])
+    run(["research", "momentum_7d", "--placebo", "20", "--no-open"])
     out = capsys.readouterr().out
     assert "Information coefficient" in out and "top_vs_market" in out and "Research run #1" in out
-    run(["research", "reversal_1d", "--placebo", "0"])
-    assert "Research run #2 (2 different ideas" in capsys.readouterr().out
+    run(["research", "reversal_1d", "--placebo", "0", "--no-open"])
+    out = capsys.readouterr().out
+    assert "Research run #2 (2 different ideas" in out
+    assert os.path.exists(tmp_path / "reports" / "research_momentum_7d.html")
+    assert os.path.exists(tmp_path / "reports" / "momentum_7d_scores.csv")
+    assert os.path.exists(tmp_path / "reports" / "plotly.min.js")
+
+    run(["view", "data", "--no-open"])
+    run(["view", "coin", "C3/USD", "--no-open"])
+    assert os.path.exists(tmp_path / "reports" / "data_explorer.html")
+    assert os.path.exists(tmp_path / "reports" / "coin_C3-USD.html")

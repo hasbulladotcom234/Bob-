@@ -63,7 +63,13 @@ python main.py data update --timeframe 1d   # daily bars too
 python main.py data check                   # quality report: gaps, bad prints, stale data
 python main.py data benchmarks              # how each coin and the equal-weight basket did
 python main.py data inspect PEPE/USD        # one coin: data holes, bad prices fixed, biggest moves
+python main.py view data                    # interactive charts of every coin, in your browser
+python main.py view coin PEPE/USD           # one coin's prices with every cleaning decision marked
 ```
+
+Charts are web pages in `reports/` (hover for values, drag to zoom,
+double-click to reset, click legend entries to hide/show). They stop before
+the locked holdout, like research.
 
 The raw downloaded data is never modified. When it's loaded, bad prices
 ("bad prints": a price far from both the bars before and after it, which
@@ -98,7 +104,9 @@ python main.py research --list          # your ideas
 python main.py research momentum_7d     # test one
 ```
 
-The report answers: does a higher score come before higher returns
+Each run also opens a page of charts in your browser and saves every
+coin's score per day to `reports/<idea>_scores.csv` (open it in Excel). The
+report answers: does a higher score come before higher returns
 (information coefficient, with a t-stat), what would holding the top third
 of coins have made after fees, could the result be luck (a placebo test that
 gives each coin another coin's scores 200 times), and does it hold every
@@ -243,6 +251,7 @@ tradingbot/
   optimizer.py   # grid search over PARAM_GRID with a train/test split
   explore.py     # statistical report for one coin
   research.py    # signal research: IC, score-group portfolios, placebo luck check
+  charts.py      # interactive chart pages (Plotly, works offline)
   brokers.py     # PaperBroker (simulated) and ExchangeBroker (ccxt orders, sandbox or live)
   bot.py         # live loop, saved state, trade journal
   setup_wizard.py# paper-account setup

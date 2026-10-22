@@ -4,8 +4,8 @@ import menu
 def test_menu_routes_choices(monkeypatch):
     calls = []
     monkeypatch.setattr(menu, "run", lambda args, input_fn=None: calls.append(args))
-    keys = iter(["5", "1",          # research -> first idea
-                 "6", "1",          # lesson -> first lesson
+    keys = iter(["7", "1",          # research -> first idea
+                 "8", "1",          # lesson -> first lesson
                  "2",               # data update
                  "", "abc",         # stray Enter / typo: menu stays open
                  "0"])
