@@ -11,3 +11,4 @@ backtest_equity.csv
 data/
 .version
 research_runs.csv
+results.txt

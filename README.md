@@ -14,6 +14,13 @@ get too deep. That is what a real trading system looks like. Past backtest
 performance does not guarantee future results. Only trade money you can
 afford to lose. This is not financial advice.
 
+## Command centre
+
+Double-click **`menu.bat`** (Windows) or **`menu.command`** (Mac) for a
+numbered menu of everything below: updating, data, research, lessons and
+paper trading. Option 9 puts a "Bob Trading" shortcut on your Desktop.
+Every command's output is saved to `results.txt` for copying.
+
 ## Quick start: paper trading in about 2 minutes
 
 1. Download the code (on GitHub: **Code → Download ZIP**) and unzip it.
@@ -218,7 +225,8 @@ Tune these in `tradingbot/config.py` (`RiskParams`).
 my_strategy.py   # YOUR strategy: indicators, buy/sell rules, parameters
 my_signals.py    # YOUR research ideas: one scoring function per idea
 learn/           # lessons: commented scripts that rebuild key numbers by hand
-main.py          # command line: setup / status / run / data / explore / backtest / optimize
+main.py          # command line: setup / status / run / data / research / explore / backtest / optimize
+menu.py          # command centre: all of the above as a numbered menu (menu.bat / menu.command)
 tradingbot/
   config.py      # settings, env vars, risk limits, live-trading safety gate
   universe.py    # which coins to research and trade
