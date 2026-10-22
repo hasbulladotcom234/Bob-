@@ -1,6 +1,7 @@
 """Command centre: every project command in a numbered menu.
 
 Double-click menu.bat (Windows) or menu.command (Mac), or run:  python menu.py
+`python menu.py --shortcut` also puts a "Bob Trading" launcher on the Desktop first.
 
 After each command its output is saved to results.txt, and you can open it
 in a text editor to copy and paste.
@@ -135,6 +136,8 @@ def main(input_fn=input):
 
 
 if __name__ == "__main__":
+    if "--shortcut" in sys.argv:
+        desktop_shortcut()
     try:
         main()
     except KeyboardInterrupt:

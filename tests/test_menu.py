@@ -30,3 +30,15 @@ def test_desktop_shortcut(tmp_path, monkeypatch):
     menu.desktop_shortcut()
     made = list((tmp_path / "Desktop").iterdir())
     assert len(made) == 1 and menu.HERE in made[0].read_text()
+
+
+def test_shortcut_flag_creates_launcher_then_opens_menu(tmp_path):
+    import os
+    import subprocess
+    import sys
+    (tmp_path / "Desktop").mkdir()
+    env = dict(os.environ, HOME=str(tmp_path), USERPROFILE=str(tmp_path))
+    out = subprocess.run([sys.executable, menu.__file__, "--shortcut"], input="0\n", capture_output=True,
+                         text=True, env=env).stdout
+    assert "Bob Trading" in out and "COMMAND CENTRE" in out
+    assert len(list((tmp_path / "Desktop").iterdir())) == 1
