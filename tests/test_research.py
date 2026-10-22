@@ -62,8 +62,8 @@ def test_groups_trade_on_the_next_day_only():
     today = d.close.pct_change(fill_method=None)
     honest = group_backtest(today, d.close, rebalance=1, fee=0)
     cheat = group_backtest(today.shift(-1), d.close, rebalance=1, fee=0)
-    assert abs(honest.daily["top_minus_bottom"].mean()) < 0.003
-    assert cheat.daily["top_minus_bottom"].mean() > 0.03
+    assert abs(honest.daily["spread_gross"].mean()) < 0.003
+    assert cheat.daily["spread_gross"].mean() > 0.03
 
 
 def test_overlapping_horizons_do_not_inflate_confidence():
@@ -102,3 +102,13 @@ def test_placebo_separates_real_effects_from_luck():
     noise = fake_market(seed=9)
     p2 = placebo_test(my_signals.momentum_7d(noise), noise.close, runs=50)
     assert p2["share_as_good"] > 0.05
+
+
+def test_relative_performance_never_breaks_below_minus_100():
+    """2021 pattern: few coins, and the bottom group jumps over 100% in a day (DOGE in Jan 2021)."""
+    d = fake_market(days=400, coins=6, seed=10)
+    d.close.iloc[200:, 0] *= 4.5                       # one coin x4.5 overnight
+    r = run_research(my_signals.momentum_7d, d, placebo_runs=0)
+    stats = r.groups.stats
+    assert stats["max_drawdown_pct"].min() >= -100
+    assert stats[["cagr_pct", "sharpe", "max_drawdown_pct"]].notna().all().all()

@@ -86,6 +86,6 @@ def test_research_command_end_to_end(tmp_path, monkeypatch, capsys):
     assert "momentum_7d" in capsys.readouterr().out
     run(["research", "momentum_7d", "--placebo", "20"])
     out = capsys.readouterr().out
-    assert "Information coefficient" in out and "top_minus_market" in out and "Research run #1" in out
+    assert "Information coefficient" in out and "top_vs_market" in out and "Research run #1" in out
     run(["research", "reversal_1d", "--placebo", "0"])
     assert "Research run #2 (2 different ideas" in capsys.readouterr().out

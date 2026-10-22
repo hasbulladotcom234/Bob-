@@ -151,9 +151,14 @@ def group_backtest(signal: pd.DataFrame, close: pd.DataFrame, groups: int = 3, r
 
     top, bottom = out[f"group_{groups}"], out["group_1"]
     out["top_after_fees"] = top.sub(top_cost.reindex(out.index).fillna(0))
-    out["top_minus_market"] = out["top_after_fees"] - out["market"]
-    out["top_minus_bottom"] = (top - bottom).sub(
-        (top_cost.reindex(out.index).fillna(0) + bottom_cost.reindex(out.index).fillna(0)))
+    # Relative performance as a ratio of growth: how much faster the top group's money grew than
+    # the market's (or the bottom group's). A ratio of two growth curves never drops below zero,
+    # unlike compounding a daily difference, which breaks on days the other side jumps over 100%.
+    # Fees count against both sides of top-vs-bottom (a short position pays fees too).
+    bottom_with_fees = bottom + bottom_cost.reindex(out.index).fillna(0)
+    out["top_vs_market"] = (1 + out["top_after_fees"]) / (1 + out["market"]) - 1
+    out["top_vs_bottom"] = (1 + out["top_after_fees"]) / (1 + bottom_with_fees) - 1
+    out["spread_gross"] = top - bottom          # plain daily difference, no fees: used by the luck check
     out = out.dropna(how="all")
 
     one_way = traded[groups].iloc[1:] / 2                    # skip the initial buy
@@ -175,7 +180,7 @@ def placebo_test(signal: pd.DataFrame, close: pd.DataFrame, groups: int = 3, reb
     """
     def spread(sig):
         daily = group_backtest(sig, close, groups=groups, rebalance=rebalance, fee=0).daily
-        return daily["top_minus_bottom"].mean() * 365
+        return daily["spread_gross"].mean() * 365
 
     actual = spread(signal)
     rng = np.random.default_rng(seed)
@@ -252,7 +257,7 @@ def run_research(signal_fn, data: types.SimpleNamespace, horizons=(1, 3, 7, 14, 
     by_year.index.name = "year"
 
     gb = group_backtest(signal, data.close, groups=groups, rebalance=rebalance, fee=fee)
-    curves = (1 + gb.daily.fillna(0)).cumprod()
+    curves = (1 + gb.daily.drop(columns="spread_gross").fillna(0)).cumprod()
     gb.stats = pd.DataFrame({c: performance(curves[c]) for c in curves.columns}).T
 
     scored = signal.notna().sum(axis=1)
@@ -290,8 +295,9 @@ def format_report(r: ResearchResult, holdout_start=None) -> str:
     add(f"\n== 2. Portfolios: hold each third of the coins by score, re-sorted every {r.rebalance} days ==")
     add("group_1 = lowest scores ... highest group = highest scores. If the idea works, returns climb from")
     add("group_1 up to the top group. top_after_fees = what buying the top group would have made after fees.")
-    add("top_minus_market = top group vs simply holding every coin. top_minus_bottom = long-short spread")
-    add("(a research yardstick: shorting crypto isn't possible on Alpaca).")
+    add("top_vs_market = how much faster the top group's money grew than holding every coin (its cagr_pct")
+    add("is the yearly edge). top_vs_bottom = the same against the bottom group: a long-short yardstick")
+    add("(shorting crypto isn't possible on Alpaca, but it shows how well the score separates coins).")
     cols = ["cagr_pct", "ann_vol_pct", "sharpe", "max_drawdown_pct"]
     add(g.stats[cols].to_string(float_format=f2))
     add(f"Top group: {100 * g.turnover:.0f}% of holdings replaced per re-sort, about {g.costs_per_year_pct:.1f}% "
@@ -299,7 +305,7 @@ def format_report(r: ResearchResult, holdout_start=None) -> str:
     if r.placebo:
         p = r.placebo
         add(f"\nLuck check (placebo): each coin given another coin's scores, many times.")
-        add(f"  Your top-minus-bottom (before fees): {p['actual_pct']:+.1f}% a year.")
+        add(f"  Your top-minus-bottom (average daily difference x 365, before fees): {p['actual_pct']:+.1f}% a year.")
         add(f"  Scrambled scores usually land between {p['placebo_p5_pct']:+.1f}% and {p['placebo_p95_pct']:+.1f}% a year "
             f"by pure luck.")
         add(f"  Scrambled scores did at least as well {100 * p['share_as_good']:.0f}% of the time"

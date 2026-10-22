@@ -220,7 +220,7 @@ def cmd_research(args):
            "rebalance_days": args.rebalance,
            "mean_ic": "" if main_row is None else f"{main_row['mean_ic']:.4f}",
            "t_stat": "" if main_row is None else f"{main_row['t_stat']:.2f}",
-           "top_vs_market_sharpe": f"{stats.loc['top_minus_market', 'sharpe']:.2f}",
+           "top_vs_market_sharpe": f"{stats.loc['top_vs_market', 'sharpe']:.2f}",
            "luck_share": "" if not result.placebo else f"{result.placebo['share_as_good']:.2f}",
            "uses_future": result.uses_future}
     new = not os.path.exists(config.research_log)
